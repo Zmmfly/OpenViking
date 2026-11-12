@@ -24,6 +24,21 @@ class UserSummary(TypedDict, total=False):
     role: str
     api_key: str
     key_prefix: str
+    disabled: bool
+    is_server_admin: bool
+
+
+class APIKeySummary(TypedDict):
+    key_id: str
+    label: str
+    prefix: str
+    created_at: str
+
+
+class LoginInfo(TypedDict, total=False):
+    password_hash: str
+    session_version: str
+    is_server_admin: bool
 
 
 class UsersPage(TypedDict):

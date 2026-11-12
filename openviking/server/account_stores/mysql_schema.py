@@ -134,6 +134,10 @@ class User(Base):
     account_pk: Mapped[int] = mapped_column(BigInteger)
     user_id: Mapped[str] = mapped_column(String(255, collation="utf8mb4_bin"))
     role: Mapped[str] = mapped_column(String(16))
+    disabled: Mapped[bool] = mapped_column(Boolean, server_default=text("0"))
+    password_hash: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    session_version: Mapped[str] = mapped_column(String(32), server_default=text("''"))
+    is_server_admin: Mapped[bool] = mapped_column(Boolean, server_default=text("0"))
     created_at: Mapped[object] = mapped_column(
         DATETIME(fsp=6), server_default=text("CURRENT_TIMESTAMP(6)")
     )
@@ -260,6 +264,7 @@ class Credential(Base):
     material: Mapped[str] = mapped_column(Text(collation="ascii_bin"))
     lookup_digest: Mapped[str] = mapped_column(String(64, collation="ascii_bin"))
     prefix: Mapped[str] = mapped_column(String(8, collation="ascii_bin"))
+    label: Mapped[str] = mapped_column(String(128), server_default=text("''"))
     revoked: Mapped[bool] = mapped_column(Boolean, server_default=text("0"))
     version: Mapped[int] = mapped_column(BigInteger, server_default=text("1"))
     sequence: Mapped[int] = mapped_column(BigInteger)

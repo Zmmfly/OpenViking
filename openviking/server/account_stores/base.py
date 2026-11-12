@@ -8,9 +8,11 @@ from typing_extensions import deprecated
 
 from openviking.server.account_stores.models import (
     AccountSummary,
+    APIKeySummary,
     AuthSnapshot,
     DeletionRecord,
     GroupSummary,
+    LoginInfo,
     UsersPage,
     UserSummary,
 )
@@ -69,6 +71,9 @@ class AccountStore(ABC):
     @abstractmethod
     async def get_user(self, account_id: str, user_id: str) -> UserSummary | None: ...
 
+    async def get_user_for_auth(self, account_id: str, user_id: str) -> UserSummary | None:
+        return await self.get_user(account_id, user_id)
+
     async def get_user_membership(self, account_id: str, user_id: str) -> UserSummary | None:
         """Point-read one user for the admin membership probe.
 
@@ -113,6 +118,62 @@ class AccountStore(ABC):
 
     @abstractmethod
     async def set_role(self, account_id: str, user_id: str, role: str) -> None: ...
+
+    async def set_user_disabled(self, account_id: str, user_id: str, disabled: bool) -> None:
+        raise NotImplementedError
+
+    async def list_api_keys(self, account_id: str, user_id: str) -> list[APIKeySummary]:
+        raise NotImplementedError
+
+    async def create_api_key(
+        self,
+        account_id: str,
+        user_id: str,
+        api_key: str,
+        label: str,
+        *,
+        expected_api_key: str | None = None,
+    ) -> APIKeySummary:
+        raise NotImplementedError
+
+    async def rotate_api_key(
+        self,
+        account_id: str,
+        user_id: str,
+        key_id: str,
+        api_key: str,
+        *,
+        expected_api_key: str | None = None,
+    ) -> APIKeySummary:
+        raise NotImplementedError
+
+    async def delete_api_key(
+        self,
+        account_id: str,
+        user_id: str,
+        key_id: str,
+        *,
+        expected_api_key: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    async def get_login_info(self, account_id: str, user_id: str) -> LoginInfo:
+        raise NotImplementedError
+
+    async def set_login_password(
+        self,
+        account_id: str,
+        user_id: str,
+        password_hash: str,
+        *,
+        server_admin: bool = False,
+        only_if_unset: bool = False,
+        expected_session_version: str | None = None,
+    ) -> None:
+        raise NotImplementedError
+
+    async def invalidate_sessions(self, account_id: str, user_id: str) -> None:
+        raise NotImplementedError
 
     # Group
     @abstractmethod
@@ -201,7 +262,11 @@ class AccountStore(ABC):
             return None
         account_id, user_id = binding
         user = await self.get_user(account_id, user_id)
-        if user is None or await self.get_deletion(account_id, user_id) is not None:
+        if (
+            user is None
+            or user.get("disabled")
+            or await self.get_deletion(account_id, user_id) is not None
+        ):
             return None
         return AuthSnapshot(
             account_id=account_id,
@@ -239,4 +304,14 @@ class AccountStore(ABC):
     async def revoke_active_api_keys(self, account_id: str, user_id: str | None = None) -> None: ...
 
     @abstractmethod
-    async def get_user_key_fingerprint(self, account_id: str, user_id: str) -> str | None: ...
+    async def get_user_key_fingerprint(
+        self, account_id: str, user_id: str, api_key: str | None = None
+    ) -> str | None: ...
+
+    async def is_key_fingerprint_active(
+        self, account_id: str, user_id: str, fingerprint: str
+    ) -> bool:
+        import hmac
+
+        current = await self.get_user_key_fingerprint(account_id, user_id)
+        return bool(current and hmac.compare_digest(current, fingerprint))

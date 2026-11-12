@@ -31,9 +31,11 @@ from openviking.core.identifiers import MAX_IDENTIFIER_LENGTH
 from openviking.server.account_stores.base import AccountStore
 from openviking.server.account_stores.models import (
     AccountSummary,
+    APIKeySummary,
     AuthSnapshot,
     DeletionRecord,
     GroupSummary,
+    LoginInfo,
     UsersPage,
     UserSummary,
 )
@@ -442,7 +444,7 @@ class MySQLAccountStore(AccountStore):
             )
 
     async def _protect_last_admin(self, session: AsyncSession, account, user) -> None:
-        if user.role != Role.ADMIN or user.deletion_task_id:
+        if user.role != Role.ADMIN or user.deletion_task_id or user.disabled:
             return
         count = await session.scalar(
             select(func.count())
@@ -451,6 +453,7 @@ class MySQLAccountStore(AccountStore):
                 User.service_name == self._service_name,
                 User.account_pk == account.account_pk,
                 User.role == Role.ADMIN,
+                User.disabled.is_(False),
                 User.deletion_task_id.is_(None),
             )
         )
@@ -505,7 +508,16 @@ class MySQLAccountStore(AccountStore):
                     User.user_id == user_id,
                 )
             )
-        return UserSummary(user_id=user.user_id, role=user.role) if user else None
+        return (
+            UserSummary(
+                user_id=user.user_id,
+                role=user.role,
+                **({"disabled": True} if user.disabled else {}),
+                **({"is_server_admin": True} if user.is_server_admin else {}),
+            )
+            if user
+            else None
+        )
 
     async def create_account(
         self,
@@ -686,7 +698,15 @@ class MySQLAccountStore(AccountStore):
                 await session.execute(
                     select(
                         func.count(),
-                        func.coalesce(func.sum(case((User.role == Role.ADMIN, 1), else_=0)), 0),
+                        func.coalesce(
+                            func.sum(
+                                case(
+                                    (and_(User.role == Role.ADMIN, User.disabled.is_(False)), 1),
+                                    else_=0,
+                                )
+                            ),
+                            0,
+                        ),
                     ).where(*base)
                 )
             ).one()
@@ -729,6 +749,7 @@ class MySQLAccountStore(AccountStore):
                                 Credential.service_name == self._service_name,
                                 Credential.user_pk.in_([user.user_pk for user in users]),
                                 Credential.revoked.is_(False),
+                                Credential.active_user_pk.is_not(None),
                             )
                         )
                     )
@@ -736,6 +757,10 @@ class MySQLAccountStore(AccountStore):
         result: list[UserSummary] = []
         for user in users:
             row: UserSummary = {"user_id": user.user_id, "role": user.role}
+            if user.disabled:
+                row["disabled"] = True
+            if user.is_server_admin:
+                row["is_server_admin"] = True
             if credential := credentials.get(user.user_pk):
                 api_key = self._decrypt_credential(account_id, user.user_id, credential.material)
                 if api_key is None:
@@ -1241,6 +1266,8 @@ class MySQLAccountStore(AccountStore):
             self._require_active(account)
             user = await self._lock_user(session, account, user_id)
             self._require_active(user)
+            if user.disabled:
+                raise FailedPreconditionError("User is disabled")
             if expected_api_key is not None:
                 # A locking read observes the current credential, even when a
                 # concurrent reset committed after request authentication.
@@ -1322,6 +1349,7 @@ class MySQLAccountStore(AccountStore):
             Credential.revoked.is_(False),
             Account.deletion_task_id.is_(None),
             User.deletion_task_id.is_(None),
+            User.disabled.is_(False),
         ]
         if account_id_hint is not None:
             predicates.append(Account.account_id == account_id_hint)
@@ -1406,6 +1434,7 @@ class MySQLAccountStore(AccountStore):
             Credential.revoked.is_(False),
             Account.deletion_task_id.is_(None),
             User.deletion_task_id.is_(None),
+            User.disabled.is_(False),
         ]
         if account_id_hint is not None:
             predicates.append(Account.account_id == account_id_hint)
@@ -1469,7 +1498,9 @@ class MySQLAccountStore(AccountStore):
                 )
             )
 
-    async def get_user_key_fingerprint(self, account_id: str, user_id: str) -> str | None:
+    async def get_user_key_fingerprint(
+        self, account_id: str, user_id: str, api_key: str | None = None
+    ) -> str | None:
         async with self._session_factory() as session:
             material = await session.scalar(
                 select(Credential.material)
@@ -1494,6 +1525,220 @@ class MySQLAccountStore(AccountStore):
                     Account.deletion_task_id.is_(None),
                     User.user_id == user_id,
                     User.deletion_task_id.is_(None),
+                    User.disabled.is_(False),
+                    *([Credential.lookup_digest == _credential_digest(api_key)] if api_key else []),
                 )
+                .order_by(
+                    Credential.active_user_pk.desc(),
+                    Credential.created_at,
+                    Credential.credential_id,
+                )
+                .limit(1)
             )
         return hashlib.sha256(material.encode()).hexdigest() if material else None
+
+    async def set_user_disabled(self, account_id: str, user_id: str, disabled: bool) -> None:
+        async with self._transaction() as session:
+            account = await self._lock_account(session, account_id)
+            self._require_active(account)
+            user = await self._lock_user(session, account, user_id)
+            self._require_active(user)
+            if disabled:
+                await self._protect_last_admin(session, account, user)
+            user.disabled = disabled
+            user.session_version = uuid4().hex
+
+    @staticmethod
+    def _api_key_summary(credential) -> APIKeySummary:
+        return APIKeySummary(
+            key_id=credential.credential_id,
+            label=credential.label or "",
+            prefix=credential.prefix,
+            created_at=_utc_isoformat(credential.created_at),
+        )
+
+    @asynccontextmanager
+    async def _edit_credentials(self, account_id, user_id, expected_api_key=None):
+        async with self._transaction() as session:
+            account = await self._lock_account(session, account_id)
+            self._require_active(account)
+            user = await self._lock_user(session, account, user_id)
+            self._require_active(user)
+            if user.disabled:
+                raise FailedPreconditionError("User is disabled")
+            if expected_api_key is not None:
+                credential = await session.scalar(
+                    select(Credential)
+                    .where(
+                        Credential.service_name == self._service_name,
+                        Credential.user_pk == user.user_pk,
+                        Credential.lookup_digest == _credential_digest(expected_api_key),
+                        Credential.revoked.is_(False),
+                    )
+                    .with_for_update()
+                )
+                if credential is None or not self._matches_credential(
+                    account_id, user_id, credential.material, expected_api_key
+                ):
+                    raise UnauthenticatedError("API key is no longer active")
+            yield session, user
+
+    async def list_api_keys(self, account_id: str, user_id: str) -> list[APIKeySummary]:
+        async with self._edit_credentials(account_id, user_id) as (session, user):
+            rows = await session.scalars(
+                select(Credential)
+                .where(
+                    Credential.service_name == self._service_name,
+                    Credential.user_pk == user.user_pk,
+                    Credential.revoked.is_(False),
+                )
+                .order_by(Credential.created_at, Credential.credential_id)
+            )
+            return [self._api_key_summary(row) for row in rows]
+
+    async def create_api_key(self, account_id, user_id, api_key, label, *, expected_api_key=None):
+        async with self._edit_credentials(account_id, user_id, expected_api_key) as (session, user):
+            sequence = await session.scalar(
+                select(func.coalesce(func.max(Credential.sequence), 0)).where(
+                    Credential.service_name == self._service_name,
+                    Credential.user_pk == user.user_pk,
+                )
+            )
+            credential = self._new_credential(
+                account_id, user_id, user.user_pk, api_key, sequence=sequence + 1
+            )
+            # NULL leaves the unique legacy-primary slot intact; each named key has its own ID.
+            credential.active_user_pk = None
+            credential.label = label
+            session.add(credential)
+            await session.flush()
+            await session.refresh(credential)
+            return self._api_key_summary(credential)
+
+    async def _key_for_update(self, session, user, key_id):
+        credential = await session.scalar(
+            select(Credential)
+            .where(
+                Credential.service_name == self._service_name,
+                Credential.user_pk == user.user_pk,
+                Credential.credential_id == key_id,
+                Credential.revoked.is_(False),
+            )
+            .with_for_update()
+        )
+        if credential is None:
+            raise NotFoundError(key_id, "API key")
+        return credential
+
+    async def rotate_api_key(self, account_id, user_id, key_id, api_key, *, expected_api_key=None):
+        async with self._edit_credentials(account_id, user_id, expected_api_key) as (session, user):
+            credential = await self._key_for_update(session, user, key_id)
+            credential.material = self._encode_credential(account_id, user_id, api_key)
+            credential.lookup_digest = _credential_digest(api_key)
+            credential.prefix = api_key[:8]
+            credential.version += 1
+            credential.created_at = func.utc_timestamp(6)
+            await session.flush()
+            await session.refresh(credential)
+            return self._api_key_summary(credential)
+
+    async def delete_api_key(self, account_id, user_id, key_id, *, expected_api_key=None):
+        async with self._edit_credentials(account_id, user_id, expected_api_key) as (session, user):
+            credential = await self._key_for_update(session, user, key_id)
+            await session.delete(credential)
+
+    async def get_login_info(self, account_id: str, user_id: str) -> LoginInfo:
+        async with self._session_factory() as session:
+            user = await session.scalar(
+                select(User)
+                .join(
+                    Account,
+                    and_(
+                        Account.service_name == User.service_name,
+                        Account.account_pk == User.account_pk,
+                    ),
+                )
+                .where(
+                    User.service_name == self._service_name,
+                    Account.account_id == account_id,
+                    User.user_id == user_id,
+                    Account.deletion_task_id.is_(None),
+                    User.deletion_task_id.is_(None),
+                    User.disabled.is_(False),
+                )
+            )
+            return (
+                LoginInfo(
+                    password_hash=user.password_hash or "",
+                    session_version=user.session_version,
+                    is_server_admin=user.is_server_admin,
+                )
+                if user
+                else {}
+            )
+
+    async def set_login_password(
+        self,
+        account_id,
+        user_id,
+        password_hash,
+        *,
+        server_admin=False,
+        only_if_unset=False,
+        expected_session_version=None,
+    ):
+        async with self._transaction() as session:
+            account = await self._lock_account(session, account_id)
+            self._require_active(account)
+            user = await self._lock_user(session, account, user_id)
+            self._require_active(user)
+            if only_if_unset and user.password_hash:
+                raise AlreadyExistsError(user_id, "login")
+            if (
+                expected_session_version is not None
+                and user.session_version != expected_session_version
+            ):
+                raise UnauthenticatedError("Login state changed; sign in again")
+            user.password_hash = password_hash
+            user.session_version = uuid4().hex
+            if server_admin:
+                user.is_server_admin = True
+
+    async def invalidate_sessions(self, account_id: str, user_id: str) -> None:
+        async with self._transaction() as session:
+            account = await self._lock_account(session, account_id)
+            user = await self._lock_user(session, account, user_id)
+            user.session_version = uuid4().hex
+
+    async def is_key_fingerprint_active(self, account_id, user_id, fingerprint):
+        async with self._session_factory() as session:
+            materials = await session.scalars(
+                select(Credential.material)
+                .join(
+                    User,
+                    and_(
+                        User.service_name == Credential.service_name,
+                        User.user_pk == Credential.user_pk,
+                    ),
+                )
+                .join(
+                    Account,
+                    and_(
+                        Account.service_name == User.service_name,
+                        Account.account_pk == User.account_pk,
+                    ),
+                )
+                .where(
+                    Credential.service_name == self._service_name,
+                    Credential.revoked.is_(False),
+                    Account.account_id == account_id,
+                    User.user_id == user_id,
+                    Account.deletion_task_id.is_(None),
+                    User.deletion_task_id.is_(None),
+                    User.disabled.is_(False),
+                )
+            )
+            return any(
+                hmac.compare_digest(hashlib.sha256(material.encode()).hexdigest(), fingerprint)
+                for material in materials
+            )

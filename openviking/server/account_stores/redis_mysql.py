@@ -940,7 +940,63 @@ class RedisMySQLAccountStore(AccountStore):
             user_id=user_id,
         )
 
-    async def get_user_key_fingerprint(self, account_id: str, user_id: str) -> str | None:
+    async def get_user_key_fingerprint(
+        self, account_id: str, user_id: str, api_key: str | None = None
+    ) -> str | None:
         return await self._read_mysql(
-            lambda: self._mysql.get_user_key_fingerprint(account_id, user_id)
+            lambda: self._mysql.get_user_key_fingerprint(account_id, user_id, api_key)
+        )
+
+    async def set_user_disabled(self, account_id, user_id, disabled):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.set_user_disabled(account_id, user_id, disabled),
+            user_id=user_id,
+        )
+
+    async def list_api_keys(self, account_id, user_id):
+        return await self._read_mysql(lambda: self._mysql.list_api_keys(account_id, user_id))
+
+    async def create_api_key(self, account_id, user_id, api_key, label, **kwargs):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.create_api_key(account_id, user_id, api_key, label, **kwargs),
+            user_id=user_id,
+        )
+
+    async def rotate_api_key(self, account_id, user_id, key_id, api_key, **kwargs):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.rotate_api_key(account_id, user_id, key_id, api_key, **kwargs),
+            user_id=user_id,
+        )
+
+    async def delete_api_key(self, account_id, user_id, key_id, **kwargs):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.delete_api_key(account_id, user_id, key_id, **kwargs),
+            user_id=user_id,
+        )
+
+    async def get_login_info(self, account_id, user_id):
+        # Sessions must observe password changes and logout across processes.
+        return await self._read_mysql(lambda: self._mysql.get_login_info(account_id, user_id))
+
+    async def set_login_password(self, account_id, user_id, password_hash, **kwargs):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.set_login_password(account_id, user_id, password_hash, **kwargs),
+            user_id=user_id,
+        )
+
+    async def invalidate_sessions(self, account_id, user_id):
+        return await self._mutate_account(
+            account_id,
+            lambda: self._mysql.invalidate_sessions(account_id, user_id),
+            user_id=user_id,
+        )
+
+    async def is_key_fingerprint_active(self, account_id, user_id, fingerprint):
+        return await self._read_mysql(
+            lambda: self._mysql.is_key_fingerprint_active(account_id, user_id, fingerprint)
         )

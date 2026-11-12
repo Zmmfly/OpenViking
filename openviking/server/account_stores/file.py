@@ -8,8 +8,10 @@ import fnmatch
 import hashlib
 import hmac
 import json
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Dict, Optional
+from uuid import uuid4
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
@@ -22,8 +24,10 @@ from openviking.pyagfs.async_client import fs_ctx_from_agfs_path
 from openviking.server.account_stores.base import AccountStore
 from openviking.server.account_stores.models import (
     AccountSummary,
+    APIKeySummary,
     DeletionRecord,
     GroupSummary,
+    LoginInfo,
     UsersPage,
     UserSummary,
 )
@@ -497,51 +501,6 @@ class FileStore(AccountStore):
             account.users.pop(user_id, None)
             raise
 
-    async def _set_user_key(
-        self,
-        account_id: str,
-        user_id: str,
-        api_key: str,
-        *,
-        rotate: bool,
-        expected_api_key: str | None = None,
-    ) -> None:
-        """Persist one credential in the legacy user record."""
-        self._ensure_account_active(account_id)
-        account = self._accounts.get(account_id)
-        if account is None:
-            raise NotFoundError(account_id, "account")
-        user_info = account.users.get(user_id)
-        if user_info is None:
-            raise NotFoundError(user_id, "user")
-        if user_info.get("deletion"):
-            raise FailedPreconditionError("User deletion is in progress")
-        if user_info.get("key") and not rotate:
-            raise AlreadyExistsError(user_id, "API key")
-
-        material = self._hash_api_key(api_key) if self._api_key_hashing_enabled else api_key
-        old_user_info = copy.deepcopy(user_info)
-        self._remove_key_index_entry(account_id, user_id, old_user_info)
-        user_info["key"] = material
-        if material.startswith("$argon2"):
-            user_info["key_prefix"] = self._get_key_prefix(api_key)
-        else:
-            user_info.pop("key_prefix", None)
-        try:
-            await self._save_users_json(
-                account_id,
-                {user_id: user_info},
-                expected_api_keys={user_id: expected_api_key}
-                if expected_api_key is not None
-                else None,
-            )
-        except Exception:
-            account.users[user_id] = old_user_info
-            self._account_key_indexes[account_id] = self._build_account_key_index(
-                account_id, account.users
-            )
-            raise
-
     async def _revoke_user_keys(self, account_id: str, user_id: str | None = None) -> None:
         """Remove matching credentials from legacy user records."""
         account = self._accounts.get(account_id)
@@ -552,11 +511,14 @@ class FileStore(AccountStore):
         originals = {}
         for target in targets:
             user_info = account.users.get(target)
-            if user_info is None or not user_info.get("key"):
+            if user_info is None or not any(
+                record.get("key") for _, record in self._key_records(user_info)
+            ):
                 continue
             originals[target] = copy.deepcopy(user_info)
             self._remove_key_index_entry(account_id, target, user_info)
             user_info["key"] = ""
+            user_info.pop("api_keys", None)
             user_info.pop("key_prefix", None)
             updates[target] = user_info
         if updates:
@@ -712,9 +674,11 @@ class FileStore(AccountStore):
             if isinstance(existing, dict) and existing.get("task_id"):
                 return dict(existing), False
 
-            if user_info.get("role") == Role.ADMIN:
+            if user_info.get("role") == Role.ADMIN and not user_info.get("disabled"):
                 active_admins = sum(
-                    info.get("role") == Role.ADMIN and not info.get("deletion")
+                    info.get("role") == Role.ADMIN
+                    and not info.get("deletion")
+                    and not info.get("disabled")
                     for info in account.users.values()
                 )
                 if active_admins <= 1:
@@ -854,40 +818,6 @@ class FileStore(AccountStore):
             if account.deletion is not None
         ]
 
-    async def _set_role(self, account_id: str, user_id: str, role: str) -> None:
-        """Update a user's role."""
-        resolved_role = validate_account_user_role(role)
-        self._ensure_account_active(account_id)
-        account = self._accounts.get(account_id)
-        if account is None:
-            raise NotFoundError(account_id, "account")
-        if user_id not in account.users:
-            raise NotFoundError(user_id, "user")
-        if account.users[user_id].get("deletion"):
-            raise FailedPreconditionError("User deletion is in progress")
-        if account.users[user_id].get("role") == Role.GLOBAL:
-            raise InvalidArgumentError(
-                "GLOBAL identities cannot change roles; delete and recreate instead."
-            )
-
-        account.users[user_id]["role"] = resolved_role
-
-        # Update role in prefix index
-        user_info = account.users[user_id]
-        key_or_hash = user_info.get("key", "")
-        if key_or_hash:
-            # Get key_prefix - if not in user_info, compute from key
-            key_prefix = user_info.get("key_prefix", "")
-            if not key_prefix:
-                key_prefix = self._get_key_prefix(key_or_hash)
-
-            for entry in self._account_key_indexes.get(account_id, {}).get(key_prefix, []):
-                if entry.user_id == user_id:
-                    entry.role = resolved_role
-                    break
-
-        await self._save_users_json(account_id, {user_id: account.users[user_id]})
-
     def _get_accounts(
         self,
         name_filter: str | None = None,
@@ -977,8 +907,8 @@ class FileStore(AccountStore):
                 and (not key.startswith("$argon2") or user_info.get("key_prefix"))
             )
             account_total += 1
-            manager_count += user_role in {"admin", "root"}
-            key_count += visible_key
+            manager_count += user_role in {"admin", "root"} and not user_info.get("disabled")
+            key_count += sum(bool(record.get("key")) for _, record in self._key_records(user_info))
 
             if name_filter and not fnmatch.fnmatch(user_id, name_filter):
                 continue
@@ -991,6 +921,10 @@ class FileStore(AccountStore):
                 continue
 
             user_data = {"user_id": user_id, "role": user_role}
+            if user_info.get("disabled"):
+                user_data["disabled"] = True
+            if user_info.get("login", {}).get("is_server_admin"):
+                user_data["is_server_admin"] = True
             if visible_key:
                 if key.startswith("$argon2"):
                     user_data["key_prefix"] = user_info["key_prefix"]
@@ -1251,21 +1185,24 @@ class FileStore(AccountStore):
         """Build one account's complete index without traversing other accounts."""
         prefix_index: Dict[str, list[UserKeyEntry]] = {}
         for user_id, user_info in users.items():
-            key_or_hash = user_info.get("key", "")
-            if not key_or_hash:
+            if user_info.get("disabled") or user_info.get("deletion"):
                 continue
-            key_prefix = user_info.get("key_prefix", "") or self._get_key_prefix(key_or_hash)
-            if not key_prefix:
-                continue
-            prefix_index.setdefault(key_prefix, []).append(
-                UserKeyEntry(
-                    account_id=account_id,
-                    user_id=user_id,
-                    role=Role(user_info.get("role", "user")),
-                    key_or_hash=key_or_hash,
-                    is_hashed=key_or_hash.startswith("$argon2"),
+            for _, record in self._key_records(user_info):
+                key_or_hash = record.get("key", "")
+                if not key_or_hash:
+                    continue
+                key_prefix = record.get("key_prefix", "") or self._get_key_prefix(key_or_hash)
+                if not key_prefix:
+                    continue
+                prefix_index.setdefault(key_prefix, []).append(
+                    UserKeyEntry(
+                        account_id=account_id,
+                        user_id=user_id,
+                        role=Role(user_info.get("role", "user")),
+                        key_or_hash=key_or_hash,
+                        is_hashed=key_or_hash.startswith("$argon2"),
+                    )
                 )
-            )
         return prefix_index
 
     async def _read_accounts_for_update(self) -> dict:
@@ -1349,9 +1286,12 @@ class FileStore(AccountStore):
             # Request-time authentication and the local cache may already be stale.
             for user_id, expected_key in (expected_api_keys or {}).items():
                 current_user = users.get(user_id, {})
-                if current_user.get("deletion") or not await self._key_matches(
-                    current_user.get("key", ""), expected_key
-                ):
+                matched = False
+                for _, record in self._key_records(current_user):
+                    if await self._key_matches(record.get("key", ""), expected_key):
+                        matched = True
+                        break
+                if current_user.get("deletion") or current_user.get("disabled") or not matched:
                     raise UnauthenticatedError("API key is no longer active")
             if updated_users is None:
                 account = self._accounts.get(account_id)
@@ -1429,12 +1369,38 @@ class FileStore(AccountStore):
             summary["task_id"] = info.deletion["task_id"]
         return summary
 
+    async def _refresh_identity_state(self, account_id: str) -> bool:
+        async with self._mutation_lock, self._reload_lock:
+            await self._refresh_accounts_from_store_unlocked()
+            if account_id not in self._accounts:
+                return False
+            await self._refresh_account_users_from_store_unlocked(account_id)
+            return True
+
+    async def get_user_for_auth(self, account_id: str, user_id: str) -> UserSummary | None:
+        if not await self._refresh_identity_state(account_id):
+            return None
+        return await self.get_user(account_id, user_id)
+
     async def get_user(self, account_id: str, user_id: str) -> UserSummary | None:
         account = self._accounts.get(account_id)
         if account is None:
             return None
         user = account.users.get(user_id)
-        return UserSummary(user_id=user_id, role=user.get("role", Role.USER)) if user else None
+        return (
+            UserSummary(
+                user_id=user_id,
+                role=user.get("role", Role.USER),
+                **({"disabled": True} if user.get("disabled") else {}),
+                **(
+                    {"is_server_admin": True}
+                    if user.get("login", {}).get("is_server_admin")
+                    else {}
+                ),
+            )
+            if user
+            else None
+        )
 
     async def get_user_membership(self, account_id: str, user_id: str) -> UserSummary | None:
         """Refresh-first point read, symmetric with ``get_account``.
@@ -1557,11 +1523,24 @@ class FileStore(AccountStore):
         )
 
     async def set_role(self, account_id: str, user_id: str, role: str) -> None:
-        self._require_writable()
-        async with self._mutation_lock:
-            await self._refresh_accounts_for_management_read_unlocked()
-            await self._refresh_users_for_management_read_unlocked(account_id)
-            await self._set_role(account_id, user_id, role)
+        resolved = validate_account_user_role(role)
+        async with self._edit_user(account_id, user_id) as (user, users):
+            if user.get("role") == Role.GLOBAL:
+                raise InvalidArgumentError(
+                    "GLOBAL identities cannot change roles; delete and recreate instead."
+                )
+            if (
+                user.get("role") == Role.ADMIN
+                and not user.get("disabled")
+                and resolved != Role.ADMIN
+            ):
+                admins = sum(
+                    u.get("role") == Role.ADMIN and not u.get("disabled") and not u.get("deletion")
+                    for u in users.values()
+                )
+                if admins <= 1:
+                    raise FailedPreconditionError("Cannot demote the last active account admin")
+            user["role"] = resolved
 
     async def begin_deletion(
         self,
@@ -1672,15 +1651,19 @@ class FileStore(AccountStore):
         *,
         expected_api_key: str | None = None,
     ) -> None:
-        self._require_writable()
-        async with self._mutation_lock:
-            await self._set_user_key(
-                account_id,
-                user_id,
-                api_key,
-                rotate=True,
-                expected_api_key=expected_api_key,
+        async with self._edit_user(account_id, user_id, expected_api_key) as (user, _):
+            if user.get("disabled"):
+                raise FailedPreconditionError("User is disabled")
+            user["key"] = (
+                await asyncio.to_thread(self._hash_api_key, api_key)
+                if self._api_key_hashing_enabled
+                else api_key
             )
+            user.pop("api_keys", None)
+            if self._api_key_hashing_enabled:
+                user["key_prefix"] = self._get_key_prefix(api_key)
+            else:
+                user.pop("key_prefix", None)
 
     @staticmethod
     async def _key_matches(material: str, api_key: str) -> bool:
@@ -1700,6 +1683,11 @@ class FileStore(AccountStore):
         account_id_hint: str | None = None,
         user_id_hint: str | None = None,
     ) -> tuple[str, str] | None:
+        if account_id_hint is not None:
+            # Suspension must be observed by every worker, independently of the
+            # optional background watcher's interval.
+            if not await self._refresh_identity_state(account_id_hint):
+                return None
         indexes = (
             (self._account_key_indexes.get(account_id_hint, {}),)
             if account_id_hint is not None
@@ -1714,7 +1702,7 @@ class FileStore(AccountStore):
                 if account is None or account.deletion is not None:
                     continue
                 user = account.users.get(entry.user_id)
-                if user is None or user.get("deletion"):
+                if user is None or user.get("deletion") or user.get("disabled"):
                     continue
                 if await self._key_matches(entry.key_or_hash, api_key):
                     return entry.account_id, entry.user_id
@@ -1725,12 +1713,186 @@ class FileStore(AccountStore):
         async with self._mutation_lock:
             await self._revoke_user_keys(account_id, user_id)
 
-    async def get_user_key_fingerprint(self, account_id: str, user_id: str) -> str | None:
+    async def get_user_key_fingerprint(
+        self, account_id: str, user_id: str, api_key: str | None = None
+    ) -> str | None:
         account = self._accounts.get(account_id)
         if account is None or account.deletion is not None:
             return None
         user = account.users.get(user_id)
-        if user is None or user.get("deletion"):
+        if user is None or user.get("deletion") or user.get("disabled"):
             return None
-        material = user.get("key", "")
+        if api_key is not None:
+            for _, record in self._key_records(user):
+                material = record.get("key", "")
+                if await self._key_matches(material, api_key):
+                    return hashlib.sha256(material.encode()).hexdigest()
+            return None
+        material = next(
+            (record["key"] for _, record in self._key_records(user) if record.get("key")), ""
+        )
         return hashlib.sha256(material.encode()).hexdigest() if material else None
+
+    @staticmethod
+    def _key_records(user: dict):
+        """Keep the legacy credential as the stable 'primary' slot."""
+        return [("primary", user), *user.get("api_keys", {}).items()]
+
+    @staticmethod
+    def _key_summary(key_id: str, record: dict) -> APIKeySummary:
+        material = record.get("key", "")
+        return APIKeySummary(
+            key_id=key_id,
+            label=record.get("key_label", ""),
+            prefix=record.get("key_prefix", "") or material[:8],
+            created_at=record.get("key_created_at", ""),
+        )
+
+    @asynccontextmanager
+    async def _edit_user(self, account_id: str, user_id: str, expected_api_key=None):
+        """Read, validate and write under the same cross-process registry lease."""
+        self._require_writable()
+        async with self._mutation_lock:
+            await self._refresh_accounts_for_management_read_unlocked()
+            self._ensure_account_active(account_id)
+            path = USERS_PATH_TEMPLATE.format(account_id=account_id)
+            lease = await self._async_agfs.pathlock_acquire_exact(path, timeout_secs=10.0)
+            try:
+                data = await self._read_json(path) or {"users": {}}
+                users = data.get("users", {})
+                user = users.get(user_id)
+                if user is None:
+                    raise NotFoundError(user_id, "user")
+                if user.get("deletion"):
+                    raise FailedPreconditionError("User deletion is in progress")
+                if expected_api_key is not None:
+                    matched = False
+                    if not user.get("disabled"):
+                        for _, record in self._key_records(user):
+                            if await self._key_matches(record.get("key", ""), expected_api_key):
+                                matched = True
+                                break
+                    if not matched:
+                        raise UnauthenticatedError("API key is no longer active")
+                yield user, users
+                await self._save_users_json(account_id, {user_id: user}, lease_ref=lease)
+            finally:
+                await self._async_agfs.pathlock_release(lease)
+
+    async def set_user_disabled(self, account_id: str, user_id: str, disabled: bool) -> None:
+        async with self._edit_user(account_id, user_id) as (user, users):
+            if disabled and not user.get("disabled") and user.get("role") == Role.ADMIN:
+                admins = sum(
+                    u.get("role") == Role.ADMIN and not u.get("disabled") and not u.get("deletion")
+                    for u in users.values()
+                )
+                if admins <= 1:
+                    raise FailedPreconditionError("Cannot disable the last active account admin")
+            user["disabled"] = disabled
+            # Re-enabling does not resurrect sessions issued before suspension.
+            user.setdefault("login", {})["session_version"] = uuid4().hex
+
+    async def list_api_keys(self, account_id: str, user_id: str) -> list[APIKeySummary]:
+        await self._refresh_users_for_management_read(account_id)
+        account = self._require_account(account_id)
+        user = account.users.get(user_id)
+        if user is None:
+            raise NotFoundError(user_id, "user")
+        return [
+            self._key_summary(key_id, record)
+            for key_id, record in self._key_records(user)
+            if record.get("key")
+        ]
+
+    async def create_api_key(self, account_id, user_id, api_key, label, *, expected_api_key=None):
+        async with self._edit_user(account_id, user_id, expected_api_key) as (user, _):
+            if user.get("disabled"):
+                raise FailedPreconditionError("User is disabled")
+            key_id = uuid4().hex
+            record = {
+                "key": await asyncio.to_thread(self._hash_api_key, api_key),
+                "key_prefix": self._get_key_prefix(api_key),
+                "key_label": label,
+                "key_created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            user.setdefault("api_keys", {})[key_id] = record
+            return self._key_summary(key_id, record)
+
+    async def rotate_api_key(self, account_id, user_id, key_id, api_key, *, expected_api_key=None):
+        async with self._edit_user(account_id, user_id, expected_api_key) as (user, _):
+            record = user if key_id == "primary" else user.get("api_keys", {}).get(key_id)
+            if not record or not record.get("key"):
+                raise NotFoundError(key_id, "API key")
+            if user.get("disabled"):
+                raise FailedPreconditionError("User is disabled")
+            record.update(
+                key=await asyncio.to_thread(self._hash_api_key, api_key),
+                key_prefix=self._get_key_prefix(api_key),
+                key_created_at=datetime.now(timezone.utc).isoformat(),
+            )
+            return self._key_summary(key_id, record)
+
+    async def delete_api_key(self, account_id, user_id, key_id, *, expected_api_key=None):
+        async with self._edit_user(account_id, user_id, expected_api_key) as (user, _):
+            record = user if key_id == "primary" else user.get("api_keys", {}).get(key_id)
+            if not record or not record.get("key"):
+                raise NotFoundError(key_id, "API key")
+            if key_id == "primary":
+                user["key"] = ""
+                user.pop("key_prefix", None)
+            else:
+                del user["api_keys"][key_id]
+
+    async def get_login_info(self, account_id: str, user_id: str) -> LoginInfo:
+        try:
+            if not await self._refresh_identity_state(account_id):
+                return {}
+        except NotFoundError:
+            return {}
+        account = self._accounts.get(account_id)
+        if not account or account.deletion:
+            return {}
+        user = account.users.get(user_id)
+        if not user or user.get("deletion") or user.get("disabled"):
+            return {}
+        return dict(user.get("login", {}))
+
+    async def set_login_password(
+        self,
+        account_id,
+        user_id,
+        password_hash,
+        *,
+        server_admin=False,
+        only_if_unset=False,
+        expected_session_version=None,
+    ):
+        async with self._edit_user(account_id, user_id) as (user, _):
+            login = user.setdefault("login", {})
+            if (
+                expected_session_version is not None
+                and login.get("session_version") != expected_session_version
+            ):
+                raise UnauthenticatedError("Login state changed; sign in again")
+            if only_if_unset and login.get("password_hash"):
+                raise AlreadyExistsError(user_id, "login")
+            login.update(password_hash=password_hash, session_version=uuid4().hex)
+            if server_admin:
+                login["is_server_admin"] = True
+
+    async def invalidate_sessions(self, account_id: str, user_id: str) -> None:
+        async with self._edit_user(account_id, user_id) as (user, _):
+            user.setdefault("login", {})["session_version"] = uuid4().hex
+
+    async def is_key_fingerprint_active(self, account_id, user_id, fingerprint):
+        if not await self._refresh_identity_state(account_id):
+            return False
+        account = self._accounts.get(account_id)
+        user = account.users.get(user_id) if account and not account.deletion else None
+        if not user or user.get("disabled") or user.get("deletion"):
+            return False
+        return any(
+            record.get("key")
+            and hmac.compare_digest(hashlib.sha256(record["key"].encode()).hexdigest(), fingerprint)
+            for _, record in self._key_records(user)
+        )
