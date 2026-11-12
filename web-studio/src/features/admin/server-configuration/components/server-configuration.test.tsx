@@ -356,7 +356,7 @@ it('does not fetch any model credentials without ROOT permission', () => {
 it('shows only VLM and Embedding even when other models are configured', async () => {
   mount()
   await screen.findByText('model-a')
-  expect(screen.getAllByRole('region')).toHaveLength(2)
+  expect(screen.getAllByRole('region')).toHaveLength(3)
   expect(
     screen.queryByRole('region', { name: 'models.plannerType' }),
   ).toBeNull()

@@ -1,4 +1,5 @@
 import { ModelConnectionTest } from '#/features/admin/server-configuration/components/model-connection-test'
+import { OidcSettings } from '#/features/admin/server-configuration/components/oidc-settings'
 import type {
   EditableModelKind,
   FieldSpec,
@@ -414,7 +415,9 @@ export function ServerConfigurationEditor() {
     service.ready &&
     canEditStudioConfiguration({
       serviceProvider: service.provider,
-      hasControlCredential: Boolean(connection.adminApiKey.trim()),
+      hasControlCredential:
+        Boolean(connection.adminApiKey.trim()) ||
+        Boolean(connection.browserSession),
       isRoleLoading: isConnectionRoleLoading,
       role: connectionRole,
       serverMode,
@@ -871,6 +874,20 @@ export function ServerConfigurationEditor() {
             </div>
           </TabsContent>
           <TabsContent value="form" className="grid min-w-0 gap-8">
+            {document && (
+              <OidcSettings
+                key={document.content}
+                content={document.content}
+                disabled={pending || query.data?.writable === false}
+                readOnly={Boolean(document.form_readonly)}
+                onChange={(content) => {
+                  setBaseline((previous) => previous ?? query.data ?? null)
+                  setSaved(false)
+                  mutation.reset()
+                  preview.mutate({ content })
+                }}
+              />
+            )}
             {visibleModelKinds.map((kind) => {
               if (document?.form_readonly)
                 return (
