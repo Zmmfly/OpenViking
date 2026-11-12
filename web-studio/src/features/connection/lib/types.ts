@@ -4,6 +4,7 @@ import type { ServerAuthMode } from '#/shared/types/auth'
 export type ConnectionRole = 'admin' | 'root' | 'unknown' | 'user'
 
 export type ConnectionDraft = {
+  browserSession?: boolean
   /** Last verified mode is an entry hint, never runtime authentication authority. */
   authMode?: ServerAuthMode
   serviceSelection?: ServiceSelection

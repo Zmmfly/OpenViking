@@ -1,9 +1,13 @@
 import { ConnectionProfilesList } from '#/features/connection/components/connection-profiles'
 import { useTranslation } from 'react-i18next'
+import { useAppConnection } from '#/features/connection/hooks/use-app-connection'
+import { AccountPage } from '#/features/account/account-page'
 
 // Local connection configuration is also the recovery page for an unavailable server.
 export function ConnectionSettingsPage() {
   const { t } = useTranslation('studio')
+  const { connection } = useAppConnection()
+  if (connection.browserSession) return <AccountPage />
   return (
     <div className="flex w-full min-w-0 flex-col gap-5">
       <h1 className="text-2xl font-semibold">

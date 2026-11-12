@@ -73,6 +73,7 @@ import { RootSetupGuide } from '#/features/admin/users/components/root-setup-gui
 import { DeleteAccountButton } from '#/features/admin/users/components/delete-account-button'
 import { UserMemoryPolicyCell } from '#/features/admin/users/components/user-memory-policy-cell'
 import { UserRoleCell } from '#/features/admin/users/components/user-role-cell'
+import { UserAccessActions } from '#/features/admin/users/components/user-access-actions'
 import { getErrorMessage } from '#/shared/lib/error'
 
 function maskApiKey(value: string | undefined): string {
@@ -99,6 +100,7 @@ export function UserManagementPanel() {
   const queryClient = useQueryClient()
   const {
     connection,
+    browserIdentity,
     connectionRole,
     isConnectionRoleLoading,
     setGeneratedCredential,
@@ -121,7 +123,9 @@ export function UserManagementPanel() {
 
   const { canManageAccounts, canManageUsers } =
     resolveStudioManagementCapabilities({
-      hasControlCredential: Boolean(connection.adminApiKey.trim()),
+      hasControlCredential:
+        Boolean(connection.adminApiKey.trim()) ||
+        Boolean(connection.browserSession),
       isRoleLoading: isConnectionRoleLoading,
       role: connectionRole,
       serverMode,
@@ -164,6 +168,7 @@ export function UserManagementPanel() {
         page: userList.page,
         pageSize: userList.pageSize,
         search: searchQuery,
+        includeCredentials: !connection.browserSession,
       }),
     queryKey: [
       'managed-users',
@@ -316,13 +321,21 @@ export function UserManagementPanel() {
           </div>
           <CardTitle>{t('management.accessDeniedTitle')}</CardTitle>
           <CardDescription>
-            {t('management.accessDeniedDescription')}
+            {t(
+              connection.browserSession
+                ? 'account:accessDenied'
+                : 'management.accessDeniedDescription',
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex justify-center">
           <Button nativeButton={false} render={<Link to="/admin/settings" />}>
             <KeyRoundIcon />
-            {t('management.openConnection')}
+            {t(
+              connection.browserSession
+                ? 'account:accountTitle'
+                : 'management.openConnection',
+            )}
           </Button>
         </CardContent>
       </Card>
@@ -337,7 +350,11 @@ export function UserManagementPanel() {
             {t('management.title')}
           </h1>
           <p className="max-w-3xl text-sm leading-6 text-muted-foreground">
-            {t('management.currentAccountDescription')}
+            {t(
+              connection.browserSession
+                ? 'account:usersDescription'
+                : 'management.currentAccountDescription',
+            )}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -431,9 +448,11 @@ export function UserManagementPanel() {
           <CardTitle>{t('management.memberListTitle')}</CardTitle>
           <CardDescription>
             {t(
-              canManageAccounts
-                ? 'management.memberListDescriptionRoot'
-                : 'management.memberListDescription',
+              connection.browserSession
+                ? 'account:userListDescription'
+                : canManageAccounts
+                  ? 'management.memberListDescriptionRoot'
+                  : 'management.memberListDescription',
             )}
           </CardDescription>
           <Input
@@ -478,7 +497,9 @@ export function UserManagementPanel() {
                     <TableHead>{t('table.role')}</TableHead>
                     <TableHead>{t('table.groups')}</TableHead>
                     <TableHead>{t('memoryPolicy.title')}</TableHead>
-                    <TableHead>{t('table.apiKey')}</TableHead>
+                    {!connection.browserSession && (
+                      <TableHead>{t('table.apiKey')}</TableHead>
+                    )}
                     <TableHead className="text-right">
                       {t('table.actions')}
                     </TableHead>
@@ -490,10 +511,13 @@ export function UserManagementPanel() {
                     const userGroups = memberships.byUser.get(user.userId) ?? []
                     const isCurrentIdentity =
                       (Boolean(connection.apiKey) ||
+                        connection.browserSession ||
                         serverMode === 'trusted') &&
-                      user.accountId === connection.accountId &&
-                      user.userId === connection.userId
+                      user.accountId === (browserIdentity?.accountId ?? connection.accountId) &&
+                      user.userId === (browserIdentity?.userId ?? connection.userId)
                     const canSwitchIdentity =
+                      !connection.browserSession &&
+                      !user.disabled &&
                       !isCurrentIdentity &&
                       (serverMode === 'trusted' || Boolean(user.apiKey))
                     const isSwitching = switchingIdentityKey === identityKey
@@ -501,12 +525,18 @@ export function UserManagementPanel() {
                       (user.role === 'admin' || user.role === 'root') &&
                       managerCount <= 1
                     const removeDisabled =
-                      isCurrentIdentity || isLastManager || removeUser.isPending
-                    const removeDisabledReason = isCurrentIdentity
-                      ? t('management.cannotRemoveCurrentIdentity')
-                      : isLastManager
-                        ? t('management.cannotRemoveLastManager')
-                        : t('actions.removeUser', { user: user.userId })
+                      (user.serverAdmin && connectionRole !== 'root') ||
+                      isCurrentIdentity ||
+                      isLastManager ||
+                      removeUser.isPending
+                    const removeDisabledReason =
+                      user.serverAdmin && connectionRole !== 'root'
+                        ? t('account:serverAdministratorOnly')
+                        : isCurrentIdentity
+                          ? t('management.cannotRemoveCurrentIdentity')
+                          : isLastManager
+                            ? t('management.cannotRemoveLastManager')
+                            : t('actions.removeUser', { user: user.userId })
 
                     return (
                       <TableRow
@@ -518,6 +548,16 @@ export function UserManagementPanel() {
                         <TableCell className="font-medium">
                           <div className="group/user flex items-center gap-2">
                             <span className="truncate">{user.userId}</span>
+                            {user.serverAdmin && (
+                              <Badge variant="outline">
+                                {t('account:serverAdministrator')}
+                              </Badge>
+                            )}
+                            {user.disabled && (
+                              <Badge variant="destructive">
+                                {t('account:disabled')}
+                              </Badge>
+                            )}
                             {isCurrentIdentity ? (
                               <Badge
                                 variant="secondary"
@@ -554,7 +594,9 @@ export function UserManagementPanel() {
                           <UserRoleCell
                             userId={user.userId}
                             role={user.role}
-                            editable={canManageUsers}
+                            editable={
+                              !user.serverAdmin || connectionRole === 'root'
+                            }
                             pending={updateRole.isPending}
                             onChange={(role) =>
                               setPendingRoleChange({
@@ -617,33 +659,13 @@ export function UserManagementPanel() {
                             user={user}
                           />
                         </TableCell>
-                        <TableCell>
-                          <div className="flex min-w-0 items-center gap-1">
-                            <code className="max-w-[20rem] truncate rounded-md border bg-muted/40 px-2 py-1 font-mono text-xs">
-                              {resolveKeyLabel(user)}
-                            </code>
-                            {user.apiKey ? (
-                              <Tooltip>
-                                <TooltipTrigger
-                                  render={
-                                    <Button
-                                      type="button"
-                                      variant="ghost"
-                                      size="icon-xs"
-                                      aria-label={t('actions.copy')}
-                                      onClick={() => void copyKey(user.apiKey)}
-                                    />
-                                  }
-                                >
-                                  <CopyIcon />
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  {t('actions.copy')}
-                                </TooltipContent>
-                              </Tooltip>
-                            ) : null}
-                            {serverMode !== 'trusted' && (
-                              <div className="ml-1 flex items-center border-l border-border/70 pl-1.5">
+                        {!connection.browserSession && (
+                          <TableCell>
+                            <div className="flex min-w-0 items-center gap-1">
+                              <code className="max-w-[20rem] truncate rounded-md border bg-muted/40 px-2 py-1 font-mono text-xs">
+                                {resolveKeyLabel(user)}
+                              </code>
+                              {user.apiKey ? (
                                 <Tooltip>
                                   <TooltipTrigger
                                     render={
@@ -651,29 +673,63 @@ export function UserManagementPanel() {
                                         type="button"
                                         variant="ghost"
                                         size="icon-xs"
-                                        aria-label={t('actions.regenerate')}
+                                        aria-label={t('actions.copy')}
                                         onClick={() =>
-                                          setPendingRegenerateUser(user)
-                                        }
-                                        disabled={
-                                          regenerateKey.isPending ||
-                                          Boolean(switchingIdentityKey)
+                                          void copyKey(user.apiKey)
                                         }
                                       />
                                     }
                                   >
-                                    <RotateCwIcon />
+                                    <CopyIcon />
                                   </TooltipTrigger>
                                   <TooltipContent>
-                                    {t('actions.regenerate')}
+                                    {t('actions.copy')}
                                   </TooltipContent>
                                 </Tooltip>
-                              </div>
-                            )}
-                          </div>
-                        </TableCell>
+                              ) : null}
+                              {serverMode !== 'trusted' && (
+                                <div className="ml-1 flex items-center border-l border-border/70 pl-1.5">
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="icon-xs"
+                                          aria-label={t('actions.regenerate')}
+                                          onClick={() =>
+                                            setPendingRegenerateUser(user)
+                                          }
+                                          disabled={
+                                            regenerateKey.isPending ||
+                                            Boolean(switchingIdentityKey)
+                                          }
+                                        />
+                                      }
+                                    >
+                                      <RotateCwIcon />
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      {t('actions.regenerate')}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex items-center justify-end gap-1">
+                            {(!user.serverAdmin ||
+                              connectionRole === 'root') && (
+                              <UserAccessActions
+                                connection={adminConnection}
+                                user={user}
+                                cannotDisable={Boolean(
+                                  isCurrentIdentity || isLastManager,
+                                )}
+                              />
+                            )}
                             <Tooltip>
                               <TooltipTrigger
                                 render={
@@ -719,6 +775,7 @@ export function UserManagementPanel() {
       </Card>
 
       <AddUserDialog
+        passwordRequired={Boolean(connection.browserSession)}
         open={addUserOpen}
         onOpenChange={setAddUserOpen}
         accountId={connection.accountId}

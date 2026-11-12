@@ -15,7 +15,7 @@ export function useStudioMode() {
     // This only exposes an entry. Management routes authenticate the control
     // credential after navigation; showing it must not trigger a Root probe.
     canManage:
-      studioMode === 'workbench'
+      studioMode === 'workbench' && !connection.browserSession
         ? provider === 'opensource' &&
           (serverMode === 'dev' || Boolean(connection.adminApiKey.trim()))
         : canOpenManagement({

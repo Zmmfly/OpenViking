@@ -65,7 +65,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import * as React from 'react'
 
-const AppConnectionContext =
+export const AppConnectionContext =
   React.createContext<AppConnectionContextValue | null>(null)
 
 export function useAppConnection(): AppConnectionContextValue {

@@ -15,7 +15,9 @@ export function useAclManagement(load = true) {
     studioMode,
   } = useAppConnection()
   const { canManageUsers } = resolveStudioManagementCapabilities({
-    hasControlCredential: Boolean(connection.adminApiKey.trim()),
+    hasControlCredential:
+      Boolean(connection.adminApiKey.trim()) ||
+      Boolean(connection.browserSession),
     isRoleLoading: isConnectionRoleLoading,
     role: connectionRole,
     serverMode,

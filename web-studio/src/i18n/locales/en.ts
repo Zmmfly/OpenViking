@@ -1,4 +1,5 @@
 import activity from './en/activity'
+import account from './en/account'
 import arranger from './en/arranger'
 import compile from './en/compile'
 import dataManagement from './en/data-management'
@@ -12,6 +13,7 @@ import vikingbot from './en/vikingbot'
 import workspace from './en/workspace'
 
 const en = {
+  account,
   studio,
   onboarding,
   arranger,

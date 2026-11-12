@@ -12,6 +12,9 @@ const bootstrap = vi.hoisted(() => ({
   pathname: '/',
   navigate: vi.fn(),
 }))
+vi.mock('#/features/account/browser-session', () => ({
+  BrowserSessionGate: ({ legacy }: { legacy: React.ReactNode }) => legacy,
+}))
 vi.mock('#/features/connection/lib/health', async (original) => ({
   ...(await original<Record<string, unknown>>()),
   fetchServerHealth: bootstrap.health,

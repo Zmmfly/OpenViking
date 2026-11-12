@@ -41,6 +41,7 @@ export function StudioModeSwitch({
   )?.workbenchIdentity
   const hasDataIdentity =
     Boolean(connection.apiKey || previousUser?.apiKey) ||
+    connection.browserSession ||
     serverMode === 'trusted' ||
     serverMode === 'dev'
   const users = savedDataIdentities(profiles, connection)

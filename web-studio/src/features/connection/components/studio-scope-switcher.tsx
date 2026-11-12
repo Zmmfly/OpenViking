@@ -144,7 +144,8 @@ export function StudioScopeSwitcher({
   const activeService = services.find((service) => service.selected)
   const capabilities = resolveStudioManagementCapabilities({
     serviceProvider: provider,
-    hasControlCredential: Boolean(connection.adminApiKey),
+    hasControlCredential:
+      Boolean(connection.adminApiKey) || Boolean(connection.browserSession),
     isRoleLoading: isConnectionRoleLoading,
     role: connectionRole,
     serverMode,

@@ -43,6 +43,7 @@ export type GeneratedCredential = {
 }
 
 export type AppConnectionContextValue = {
+  browserIdentity?: { accountId: string; userId: string }
   profiles: Array<ConnectionProfile>
   activeProfileId: string
   saveProfile: (profile: ConnectionProfile) => void

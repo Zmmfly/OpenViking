@@ -9,8 +9,17 @@ import {
 import studioI18n from '#/i18n'
 import { Navigate, useNavigate, useRouterState } from '@tanstack/react-router'
 import * as React from 'react'
+import { BrowserSessionGate } from '#/features/account/browser-session'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  return (
+    <BrowserSessionGate legacy={<LegacyAppShell>{children}</LegacyAppShell>}>
+      {children}
+    </BrowserSessionGate>
+  )
+}
+
+function LegacyAppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate()
   const pathname = useRouterState({
     select: (state) => state.location.pathname,

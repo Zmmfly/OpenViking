@@ -59,7 +59,9 @@ export function canEditStudioConfiguration(input: ManagementInput): boolean {
       (input.serviceProvider ?? 'opensource') === 'opensource'
     )
   return (
-    (input.serverMode === 'api_key' || input.serverMode === 'trusted') &&
+    (input.serverMode === 'api_key' ||
+      input.serverMode === 'trusted' ||
+      input.serverMode === 'oidc') &&
     resolveStudioManagementCapabilities(input).canManageAccounts
   )
 }

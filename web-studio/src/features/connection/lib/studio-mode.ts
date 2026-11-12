@@ -75,7 +75,9 @@ export function canOpenManagement(input: {
     )
   return resolveStudioManagementCapabilities({
     serviceProvider: input.provider,
-    hasControlCredential: Boolean(input.connection.adminApiKey.trim()),
+    hasControlCredential:
+      Boolean(input.connection.adminApiKey.trim()) ||
+      Boolean(input.connection.browserSession),
     role: input.role,
     isRoleLoading: input.isRoleLoading,
     serverMode: input.serverMode,
@@ -130,6 +132,7 @@ export function resolveStudioEntry({
 }): '/admin' | '/home' | '/filesystem' {
   const hasDataIdentity =
     Boolean(connection.apiKey) ||
+    connection.browserSession ||
     serverMode === 'trusted' ||
     serverMode === 'dev'
   if (canManage && (preferredMode === 'management' || !hasDataIdentity))

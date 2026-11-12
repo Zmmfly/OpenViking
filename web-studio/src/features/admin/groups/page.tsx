@@ -7,7 +7,9 @@ export function UserGroupsRoute() {
   const { connection, connectionRole, isConnectionRoleLoading, serverMode } =
     useAppConnection()
   const { canManageUsers } = resolveStudioManagementCapabilities({
-    hasControlCredential: Boolean(connection.adminApiKey.trim()),
+    hasControlCredential:
+      Boolean(connection.adminApiKey.trim()) ||
+      Boolean(connection.browserSession),
     isRoleLoading: isConnectionRoleLoading,
     role: connectionRole,
     serverMode,

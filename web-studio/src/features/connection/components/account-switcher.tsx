@@ -157,7 +157,9 @@ export function AccountSwitcher({
   const { provider } = useStudioService()
   const capabilities = resolveStudioManagementCapabilities({
     serviceProvider: provider,
-    hasControlCredential: Boolean(connection.adminApiKey.trim()),
+    hasControlCredential:
+      Boolean(connection.adminApiKey.trim()) ||
+      Boolean(connection.browserSession),
     isRoleLoading: isConnectionRoleLoading,
     role: connectionRole,
     serverMode,

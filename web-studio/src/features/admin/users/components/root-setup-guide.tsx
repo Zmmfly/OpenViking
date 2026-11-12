@@ -16,6 +16,7 @@ export function RootSetupGuide({ onCreate }: { onCreate: () => void }) {
     (profile) => profile.id === activeProfileId,
   )?.workbenchIdentity
   if (
+    connection.browserSession ||
     connectionRole !== 'root' ||
     serverMode !== 'api_key' ||
     connection.apiKey ||

@@ -92,7 +92,9 @@ export function StudioLayout({ children }: { children: React.ReactNode }) {
   )
   const permissionInput = {
     serviceProvider: provider,
-    hasControlCredential: Boolean(connection.adminApiKey.trim()),
+    hasControlCredential:
+      Boolean(connection.adminApiKey.trim()) ||
+      Boolean(connection.browserSession),
     isRoleLoading: isConnectionRoleLoading,
     role: connectionRole,
     serverMode,

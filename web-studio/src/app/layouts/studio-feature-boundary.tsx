@@ -52,7 +52,9 @@ export function StudioFeatureBoundary({ children }: { children: ReactNode }) {
   else if (feature?.domain === 'management') {
     const permissions = resolveStudioManagementCapabilities({
       serviceProvider: service.provider,
-      hasControlCredential: Boolean(connection.adminApiKey.trim()),
+      hasControlCredential:
+        Boolean(connection.adminApiKey.trim()) ||
+        Boolean(connection.browserSession),
       isRoleLoading: isConnectionRoleLoading,
       role: connectionRole,
       serverMode,
@@ -75,7 +77,9 @@ export function StudioFeatureBoundary({ children }: { children: ReactNode }) {
       feature.id === 'gateway'
         ? !canManageStudioGateway({
             serviceProvider: service.provider,
-            hasControlCredential: Boolean(connection.adminApiKey.trim()),
+            hasControlCredential:
+              Boolean(connection.adminApiKey.trim()) ||
+              Boolean(connection.browserSession),
             isRoleLoading: isConnectionRoleLoading,
             role: connectionRole,
             serverMode,

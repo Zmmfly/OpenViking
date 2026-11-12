@@ -35,12 +35,14 @@ export function AddUserDialog({
   onCreate,
   onOpenChange,
   open,
+  passwordRequired = false,
 }: {
   accountId: string
   isPending: boolean
   onCreate: (draft: CreateUserInput) => void
   onOpenChange: (open: boolean) => void
   open: boolean
+  passwordRequired?: boolean
 }) {
   const { t } = useTranslation('settings')
   const [preset, setPreset] = React.useState<UserMemoryPolicy>(() =>
@@ -103,9 +105,14 @@ export function AddUserDialog({
               <DialogHeader>
                 <DialogTitle>{t('dialogs.addUser.title')}</DialogTitle>
                 <DialogDescription>
-                  {t('dialogs.addUser.currentAccountDescription', {
-                    accountId,
-                  })}
+                  {t(
+                    passwordRequired
+                      ? 'account:createUserDescription'
+                      : 'dialogs.addUser.currentAccountDescription',
+                    {
+                      accountId,
+                    },
+                  )}
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-5">
@@ -147,6 +154,26 @@ export function AddUserDialog({
                       <SelectItem value="admin">{t('roles.admin')}</SelectItem>
                     </SelectContent>
                   </Select>
+                </label>
+                <label className="grid gap-2 text-sm font-medium">
+                  {t('account:password')}
+                  <Input
+                    type="password"
+                    required={passwordRequired}
+                    autoComplete="new-password"
+                    minLength={12}
+                    maxLength={128}
+                    value={draft.password ?? ''}
+                    onChange={(event) =>
+                      setDraft((current) => ({
+                        ...current,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {t('account:passwordHint')}
+                  </span>
                 </label>
               </div>
               <MemoryPolicySummary

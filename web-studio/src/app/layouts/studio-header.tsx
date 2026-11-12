@@ -11,6 +11,10 @@ import { resolveConfiguredServiceProvider } from '#/shared/lib/studio-service'
 import { SidebarTrigger } from '#/shared/ui/sidebar'
 import { Link, useRouterState } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
+import { logoutBrowser } from '#/features/account/browser-session'
+import { SessionAccountScope } from '#/features/account/account-scope'
+import { Button } from '#/shared/ui/button'
+import { KeyRoundIcon, LogOutIcon } from 'lucide-react'
 
 export function StudioHeader({
   managementMode,
@@ -32,10 +36,11 @@ export function StudioHeader({
   const showManagementEntry =
     !isGatewayHost &&
     (canManage ||
-      resolveConfiguredServiceProvider(
-        connection.baseUrl,
-        connection.serviceSelection,
-      ) === 'opensource')
+      (!connection.browserSession &&
+        resolveConfiguredServiceProvider(
+          connection.baseUrl,
+          connection.serviceSelection,
+        ) === 'opensource'))
   return (
     <header className="z-20 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border/70 bg-background px-3 sm:gap-4 sm:px-4">
       <div className="flex min-w-0 items-center gap-2 sm:gap-4">
@@ -60,12 +65,18 @@ export function StudioHeader({
           />
         </Link>
         <div className="hidden h-5 w-px bg-border/70 sm:block" />
-        <StudioScopeSwitcher
-          key={`${identityScopeKey}:${managementMode}:${showAccountScope}`}
-          settingsPath={settingsPath}
-          managementMode={managementMode}
-          showAccountScope={showAccountScope}
-        />
+        {connection.browserSession ? (
+          <SessionAccountScope
+            managementMode={managementMode && showAccountScope}
+          />
+        ) : (
+          <StudioScopeSwitcher
+            key={`${identityScopeKey}:${managementMode}:${showAccountScope}`}
+            settingsPath={settingsPath}
+            managementMode={managementMode}
+            showAccountScope={showAccountScope}
+          />
+        )}
       </div>
       <div className="flex shrink-0 items-center gap-1.5 sm:gap-3">
         {managementMode ? (
@@ -80,10 +91,34 @@ export function StudioHeader({
             canManage={canManage}
           />
         ) : null}
-        <StudioApiKeyMenu
-          managementMode={managementMode}
-          isGatewayHost={isGatewayHost}
-        />
+        {connection.browserSession ? (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title={t('account:keysTitle')}
+              aria-label={t('account:keysTitle')}
+              nativeButton={false}
+              render={<Link to="/api-keys" />}
+            >
+              <KeyRoundIcon />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              title={t('account:logout')}
+              aria-label={t('account:logout')}
+              onClick={() => void logoutBrowser()}
+            >
+              <LogOutIcon />
+            </Button>
+          </>
+        ) : (
+          <StudioApiKeyMenu
+            managementMode={managementMode}
+            isGatewayHost={isGatewayHost}
+          />
+        )}
         <div aria-hidden="true" className="mx-0.5 h-5 w-px bg-border/70" />
         <StudioSettingsMenu
           key={`${connection.baseUrl}:${connection.accountId}`}

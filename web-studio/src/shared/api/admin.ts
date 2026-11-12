@@ -33,6 +33,8 @@ export type AdminAccount = {
 }
 
 export type AdminUser = {
+  disabled?: boolean
+  serverAdmin?: boolean
   accountId: string
   apiKey?: string
   keyPrefix?: string
@@ -46,6 +48,7 @@ export type CreateAccountInput = {
 }
 
 export type CreateUserInput = {
+  password?: string
   memoryPolicy?: UserMemoryPolicy
   accountId: string
   role: string
@@ -345,6 +348,8 @@ function normalizeUser(accountId: string, value: unknown): AdminUser | null {
     accountId,
     apiKey: asString(value.api_key),
     keyPrefix: asString(value.key_prefix),
+    ...(value.disabled === true ? { disabled: true } : {}),
+    ...(value.is_server_admin === true ? { serverAdmin: true } : {}),
     role: asString(value.role) || 'user',
     userId,
   }
@@ -429,7 +434,12 @@ export type AdminUserPage = {
 export async function fetchAdminUsersPage(
   connection: AdminConnection,
   accountId: string,
-  options: { page: number; pageSize: number; search: string },
+  options: {
+    page: number
+    pageSize: number
+    search: string
+    includeCredentials?: boolean
+  },
 ): Promise<AdminUserPage> {
   const result = await getOvResult<{
     users: unknown[]
@@ -446,6 +456,9 @@ export async function fetchAdminUsersPage(
         limit: options.pageSize,
         query: options.search.trim() || undefined,
         include_summary: true,
+        ...(options.includeCredentials === false
+          ? { include_credentials: false }
+          : {}),
       },
     }),
   )
@@ -502,6 +515,7 @@ export async function createAdminUser(
       body: {
         role: input.role,
         user_id: input.userId,
+        ...(input.password ? { password: input.password } : {}),
         ...(input.memoryPolicy
           ? { user_config: { memory_policy: input.memoryPolicy } }
           : {}),

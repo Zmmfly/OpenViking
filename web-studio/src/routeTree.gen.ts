@@ -13,8 +13,10 @@ import { Route as UsersRouteImport } from './routes/users'
 import { Route as PlaygroundRouteImport } from './routes/playground'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MemoriesRouteImport } from './routes/memories'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as GatewayRouteImport } from './routes/gateway'
 import { Route as ConfigRouteImport } from './routes/config'
+import { Route as ApiKeysRouteImport } from './routes/api-keys'
 import { Route as WatchesRouteRouteImport } from './routes/watches/route'
 import { Route as VikingbotRouteRouteImport } from './routes/vikingbot/route'
 import { Route as TasksRouteRouteImport } from './routes/tasks/route'
@@ -92,6 +94,11 @@ const MemoriesRoute = MemoriesRouteImport.update({
   path: '/memories',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const GatewayRoute = GatewayRouteImport.update({
   id: '/gateway',
   path: '/gateway',
@@ -100,6 +107,11 @@ const GatewayRoute = GatewayRouteImport.update({
 const ConfigRoute = ConfigRouteImport.update({
   id: '/config',
   path: '/config',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiKeysRoute = ApiKeysRouteImport.update({
+  id: '/api-keys',
+  path: '/api-keys',
   getParentRoute: () => rootRouteImport,
 } as any)
 const WatchesRouteRoute = WatchesRouteRouteImport.update({
@@ -410,8 +422,10 @@ export interface FileRoutesByFullPath {
   '/tasks': typeof TasksRouteRoute
   '/vikingbot': typeof VikingbotRouteRouteWithChildren
   '/watches': typeof WatchesRouteRoute
+  '/api-keys': typeof ApiKeysRoute
   '/config': typeof ConfigRoute
   '/gateway': typeof GatewayRouteWithChildren
+  '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
   '/playground': typeof PlaygroundRoute
@@ -470,8 +484,10 @@ export interface FileRoutesByTo {
   '/skills': typeof SkillsRouteRoute
   '/tasks': typeof TasksRouteRoute
   '/watches': typeof WatchesRouteRoute
+  '/api-keys': typeof ApiKeysRoute
   '/config': typeof ConfigRoute
   '/gateway': typeof GatewayRouteWithChildren
+  '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
   '/playground': typeof PlaygroundRoute
@@ -532,8 +548,10 @@ export interface FileRoutesById {
   '/tasks': typeof TasksRouteRoute
   '/vikingbot': typeof VikingbotRouteRouteWithChildren
   '/watches': typeof WatchesRouteRoute
+  '/api-keys': typeof ApiKeysRoute
   '/config': typeof ConfigRoute
   '/gateway': typeof GatewayRouteWithChildren
+  '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
   '/playground': typeof PlaygroundRoute
@@ -598,8 +616,10 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/vikingbot'
     | '/watches'
+    | '/api-keys'
     | '/config'
     | '/gateway'
+    | '/login'
     | '/memories'
     | '/onboarding'
     | '/playground'
@@ -658,8 +678,10 @@ export interface FileRouteTypes {
     | '/skills'
     | '/tasks'
     | '/watches'
+    | '/api-keys'
     | '/config'
     | '/gateway'
+    | '/login'
     | '/memories'
     | '/onboarding'
     | '/playground'
@@ -719,8 +741,10 @@ export interface FileRouteTypes {
     | '/tasks'
     | '/vikingbot'
     | '/watches'
+    | '/api-keys'
     | '/config'
     | '/gateway'
+    | '/login'
     | '/memories'
     | '/onboarding'
     | '/playground'
@@ -784,8 +808,10 @@ export interface RootRouteChildren {
   TasksRouteRoute: typeof TasksRouteRoute
   VikingbotRouteRoute: typeof VikingbotRouteRouteWithChildren
   WatchesRouteRoute: typeof WatchesRouteRoute
+  ApiKeysRoute: typeof ApiKeysRoute
   ConfigRoute: typeof ConfigRoute
   GatewayRoute: typeof GatewayRouteWithChildren
+  LoginRoute: typeof LoginRoute
   MemoriesRoute: typeof MemoriesRoute
   OnboardingRoute: typeof OnboardingRoute
   PlaygroundRoute: typeof PlaygroundRoute
@@ -830,6 +856,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/gateway': {
       id: '/gateway'
       path: '/gateway'
@@ -842,6 +875,13 @@ declare module '@tanstack/react-router' {
       path: '/config'
       fullPath: '/config'
       preLoaderRoute: typeof ConfigRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api-keys': {
+      id: '/api-keys'
+      path: '/api-keys'
+      fullPath: '/api-keys'
+      preLoaderRoute: typeof ApiKeysRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/watches': {
@@ -1403,8 +1443,10 @@ const rootRouteChildren: RootRouteChildren = {
   TasksRouteRoute: TasksRouteRoute,
   VikingbotRouteRoute: VikingbotRouteRouteWithChildren,
   WatchesRouteRoute: WatchesRouteRoute,
+  ApiKeysRoute: ApiKeysRoute,
   ConfigRoute: ConfigRoute,
   GatewayRoute: GatewayRouteWithChildren,
+  LoginRoute: LoginRoute,
   MemoriesRoute: MemoriesRoute,
   OnboardingRoute: OnboardingRoute,
   PlaygroundRoute: PlaygroundRoute,

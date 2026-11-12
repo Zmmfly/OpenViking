@@ -60,6 +60,7 @@ export function StudioSettingsMenu({
     !managementMode &&
     Boolean(userName) &&
     (Boolean(connection.apiKey) ||
+      connection.browserSession ||
       serverMode === 'trusted' ||
       serverMode === 'dev')
   const managementIdentity =
@@ -85,6 +86,7 @@ export function StudioSettingsMenu({
     preferredMode !== 'management' &&
     (connection.apiKey ||
       workbenchKey ||
+      connection.browserSession ||
       serverMode === 'trusted' ||
       serverMode === 'dev')
       ? 'workbench'
@@ -138,70 +140,83 @@ export function StudioSettingsMenu({
         sideOffset={10}
         className="max-h-[calc(100svh-5rem)] w-[min(23rem,calc(100vw-1.5rem))] gap-0 overflow-y-auto rounded-xl p-2 shadow-xl"
       >
-        <div
-          role="group"
-          aria-label={t('studioSettings.connections')}
-          className="border-b border-border/60 pb-2"
-        >
-          <p className="px-2.5 py-2 text-xs font-medium text-muted-foreground">
-            {t('studioSettings.connections')}
-          </p>
-          <div className="max-h-52 overflow-y-auto">
-            {profiles.map((profile) => {
-              const active = profile.id === activeProfileId
-              return (
-                <button
-                  key={profile.id}
-                  type="button"
-                  aria-pressed={active}
-                  disabled={active}
-                  className={cn(MENU_ITEM, active && 'bg-accent')}
-                  onClick={() => {
-                    setOpen(false)
-                    activateProfile(profile.id)
-                  }}
-                >
-                  <ServerIcon className="size-4 shrink-0 text-muted-foreground" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium">
-                      {profile.name}
-                    </span>
-                    <span className="block truncate text-xs text-muted-foreground">
-                      {profile.connection.baseUrl}
-                    </span>
-                  </span>
-                  {active ? (
-                    <>
-                      <CheckIcon
-                        aria-hidden="true"
-                        className="size-4 shrink-0"
-                      />
-                      <span className="sr-only">
-                        {t('studio:profiles.active')}
+        {connection.browserSession ? (
+          <Link
+            to="/settings"
+            onClick={() => setOpen(false)}
+            className={MENU_ITEM}
+          >
+            <SettingsIcon className="size-4" />
+            {t('account:accountTitle')}
+          </Link>
+        ) : (
+          <div
+            role="group"
+            aria-label={t('studioSettings.connections')}
+            className="border-b border-border/60 pb-2"
+          >
+            <p className="px-2.5 py-2 text-xs font-medium text-muted-foreground">
+              {t('studioSettings.connections')}
+            </p>
+            <div className="max-h-52 overflow-y-auto">
+              {profiles.map((profile) => {
+                const active = profile.id === activeProfileId
+                return (
+                  <button
+                    key={profile.id}
+                    type="button"
+                    aria-pressed={active}
+                    disabled={active}
+                    className={cn(MENU_ITEM, active && 'bg-accent')}
+                    onClick={() => {
+                      setOpen(false)
+                      activateProfile(profile.id)
+                    }}
+                  >
+                    <ServerIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate font-medium">
+                        {profile.name}
                       </span>
-                    </>
-                  ) : null}
-                </button>
-              )
-            })}
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {profile.connection.baseUrl}
+                      </span>
+                    </span>
+                    {active ? (
+                      <>
+                        <CheckIcon
+                          aria-hidden="true"
+                          className="size-4 shrink-0"
+                        />
+                        <span className="sr-only">
+                          {t('studio:profiles.active')}
+                        </span>
+                      </>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+            <Link
+              to={
+                managementMode ? '/admin/connections/new' : '/connections/new'
+              }
+              onClick={() => setOpen(false)}
+              className={MENU_ITEM}
+            >
+              <PlusIcon className="size-4 text-muted-foreground" />
+              {t('studioSettings.addConnection')}
+            </Link>
+            <Link
+              to={settingsPath}
+              onClick={() => setOpen(false)}
+              className={MENU_ITEM}
+            >
+              <CableIcon className="size-4 text-muted-foreground" />
+              {t('studioSettings.manageConnections')}
+            </Link>
           </div>
-          <Link
-            to={managementMode ? '/admin/connections/new' : '/connections/new'}
-            onClick={() => setOpen(false)}
-            className={MENU_ITEM}
-          >
-            <PlusIcon className="size-4 text-muted-foreground" />
-            {t('studioSettings.addConnection')}
-          </Link>
-          <Link
-            to={settingsPath}
-            onClick={() => setOpen(false)}
-            className={MENU_ITEM}
-          >
-            <CableIcon className="size-4 text-muted-foreground" />
-            {t('studioSettings.manageConnections')}
-          </Link>
-        </div>
+        )}
         {canManage ? (
           <div className="flex items-center justify-between gap-3 px-2.5 py-3">
             <span className="flex items-center gap-2.5 text-xs">
@@ -222,6 +237,7 @@ export function StudioSettingsMenu({
                     mode === 'workbench' &&
                     !connection.apiKey &&
                     !workbenchKey &&
+                    !connection.browserSession &&
                     serverMode !== 'trusted' &&
                     serverMode !== 'dev'
                   }
