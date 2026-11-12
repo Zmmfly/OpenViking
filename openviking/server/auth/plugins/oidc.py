@@ -38,6 +38,7 @@ def _check_jwt_available() -> bool:
             from jose import JWTError, jwk, jwt  # noqa: F401
             from jose.backends.base import Key  # noqa: F401
             from jose.exceptions import ExpiredSignatureError, JWTClaimsError  # noqa: F401
+
             _check_jwt_available._cached = True
         except ImportError:
             logger.warning(
@@ -51,10 +52,18 @@ def _check_jwt_available() -> bool:
 # Supported signing algorithms. Asymmetric algorithms are preferred for OIDC;
 # HMAC algorithms are included for completeness but require a shared secret.
 _SUPPORTED_ALGORITHMS = [
-    "RS256", "RS384", "RS512",
-    "ES256", "ES384", "ES512",
-    "PS256", "PS384", "PS512",
-    "HS256", "HS384", "HS512",
+    "RS256",
+    "RS384",
+    "RS512",
+    "ES256",
+    "ES384",
+    "ES512",
+    "PS256",
+    "PS384",
+    "PS512",
+    "HS256",
+    "HS384",
+    "HS512",
 ]
 
 _DISCOVERY_PATH = "/.well-known/openid-configuration"
@@ -86,6 +95,16 @@ class OIDCAuthPlugin(AuthPlugin):
         x_openviking_user: Optional[str] = None,
     ) -> ResolvedIdentity:
         """Resolve identity from OIDC JWT token."""
+        manager = (
+            getattr(request.app.state, "api_key_manager", None)
+            if getattr(self, "_local_keys", None) is not None
+            else None
+        )
+        if api_key and manager is not None:
+            try:
+                return await manager.resolve_identity(api_key)
+            except UnauthenticatedError:
+                pass
         if not _check_jwt_available():
             raise UnauthenticatedError(
                 "OIDC authentication not available: missing python-jose and httpx"
@@ -141,11 +160,16 @@ class OIDCAuthPlugin(AuthPlugin):
             Role.USER,
         )
 
+        if manager is not None:
+            user = await manager.get_user_for_auth(account_id, user_id)
+            if not user or user.get("disabled") or await manager.get_deletion(account_id, user_id):
+                raise UnauthenticatedError("OIDC user is not registered or is disabled")
+            return ResolvedIdentity(
+                role=Role.parse(user["role"]), account_id=account_id, user_id=user_id
+            )
         return ResolvedIdentity(role=Role.USER, account_id=account_id, user_id=user_id)
 
-    def _extract_token(
-        self, request: Request, api_key: Optional[str] = None
-    ) -> Optional[str]:
+    def _extract_token(self, request: Request, api_key: Optional[str] = None) -> Optional[str]:
         """Extract JWT token from request."""
         if self._config is None:
             return None
@@ -156,7 +180,7 @@ class OIDCAuthPlugin(AuthPlugin):
             if auth_header:
                 prefix = self._config.token_header_prefix
                 if prefix and auth_header.startswith(prefix):
-                    return auth_header[len(prefix):].strip()
+                    return auth_header[len(prefix) :].strip()
                 # Without a configured prefix, accept raw bearer token
                 return auth_header.strip()
 
@@ -261,9 +285,7 @@ class OIDCAuthPlugin(AuthPlugin):
                     "OIDC discovery document at %s did not contain a jwks_uri",
                     discovery_url,
                 )
-                raise UnauthenticatedError(
-                    "OIDC discovery document is missing 'jwks_uri'"
-                )
+                raise UnauthenticatedError("OIDC discovery document is missing 'jwks_uri'")
 
             logger.info("OIDC discovery resolved jwks_uri=%s", jwks_uri)
             self._jwks_uri = jwks_uri
@@ -296,9 +318,7 @@ class OIDCAuthPlugin(AuthPlugin):
                 try:
                     self._jwks[key_kid] = jwk.construct(key_dict)
                 except Exception as e:  # noqa: BLE001
-                    logger.warning(
-                        "Failed to construct key for kid=%s: %s", key_kid, e
-                    )
+                    logger.warning("Failed to construct key for kid=%s: %s", key_kid, e)
 
         if kid not in self._jwks:
             raise UnauthenticatedError(f"Unknown key ID: {kid}")
@@ -342,15 +362,26 @@ class OIDCAuthPlugin(AuthPlugin):
 
         # Resolve the effective audience once. Explicit audience wins;
         # otherwise fall back to client_id (standard OIDC ID token contract).
-        self._effective_audience: Optional[str] = (
-            self._config.audience or self._config.client_id
-        )
+        self._effective_audience: Optional[str] = self._config.audience or self._config.client_id
+        if getattr(config, "root_api_key", None) and getattr(config, "studio_login_enabled", True):
+            from openviking.server.auth.plugins.api_key import ApiKeyAuthPlugin
+
+            self._local_keys = ApiKeyAuthPlugin()
+            await self._local_keys.initialize(app, service, config)
 
         logger.info(
             "OIDC auth plugin initialized with issuer=%s, audience=%s",
             self._config.issuer,
             self._effective_audience,
         )
+
+    async def shutdown(self) -> None:
+        if getattr(self, "_local_keys", None) is not None:
+            await self._local_keys.shutdown()
+
+    def get_request_context_checks(self, path: str, identity: ResolvedIdentity) -> None:
+        if getattr(self, "_local_keys", None) is not None:
+            self._local_keys.get_request_context_checks(path, identity)
 
     def can_skip_api_key_for_bot_proxy(self) -> bool:
         """OIDC does not declare bot-proxy compatibility until VikingBot

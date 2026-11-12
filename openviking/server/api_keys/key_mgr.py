@@ -108,8 +108,8 @@ class APIKeyManager:
 
         Freshness follows the store contract; deletion state is checked separately.
         """
-        user = await self.get_user(account_id, user_id)
-        if user is None:
+        user = await self.get_user_for_auth(account_id, user_id)
+        if user is None or user.get("disabled"):
             return None
         try:
             registered_role = Role.parse(user["role"])
@@ -137,6 +137,10 @@ class APIKeyManager:
     async def resolve_identity(self, api_key: str) -> ResolvedIdentity:
         if self._root_api_key and hmac.compare_digest(api_key, self._root_api_key):
             return ResolvedIdentity(role=Role.ROOT)
+        if api_key.startswith("ovsf_") and api_key.count(".") == 1:
+            from openviking.server.studio_auth import resolve_forward_credential
+
+            return await resolve_forward_credential(self, self._root_api_key, api_key)
         account_id, user_id = self._key_hints(api_key)
         snapshot = await self._store.get_auth_snapshot(
             api_key, account_id_hint=account_id, user_id_hint=user_id
@@ -283,6 +287,9 @@ class APIKeyManager:
     async def get_user(self, account_id, user_id):
         return await self._store.get_user(account_id, user_id)
 
+    async def get_user_for_auth(self, account_id, user_id):
+        return await self._store.get_user_for_auth(account_id, user_id)
+
     async def get_user_membership(self, account_id, user_id):
         return await self._store.get_user_membership(account_id, user_id)
 
@@ -399,5 +406,61 @@ class APIKeyManager:
     async def delete_group(self, account_id, group_id):
         await self._store.delete_group(account_id, group_id)
 
-    async def get_user_key_fingerprint(self, account_id, user_id):
-        return await self._store.get_user_key_fingerprint(account_id, user_id)
+    async def get_user_key_fingerprint(self, account_id, user_id, api_key=None):
+        return await self._store.get_user_key_fingerprint(account_id, user_id, api_key)
+
+    async def is_key_fingerprint_active(self, account_id, user_id, fingerprint):
+        return await self._store.is_key_fingerprint_active(account_id, user_id, fingerprint)
+
+    async def set_user_disabled(self, account_id, user_id, disabled):
+        self.require_writable()
+        return await self._store.set_user_disabled(account_id, user_id, disabled)
+
+    async def list_api_keys(self, account_id, user_id):
+        return await self._store.list_api_keys(account_id, user_id)
+
+    async def create_api_key(self, account_id, user_id, label, *, expected_api_key=None):
+        self.require_writable()
+        if not self._issue_user_keys:
+            raise FailedPreconditionError("Personal API keys are disabled in trusted mode")
+        label = label.strip()
+        if len(label) > 128:
+            raise InvalidArgumentError("API key label must not exceed 128 characters")
+        key = generate_api_key(account_id, user_id)
+        result = await self._store.create_api_key(
+            account_id, user_id, key, label, expected_api_key=expected_api_key
+        )
+        return {**result, "api_key": key}
+
+    async def rotate_api_key(self, account_id, user_id, key_id, *, expected_api_key=None):
+        self.require_writable()
+        if not self._issue_user_keys:
+            raise FailedPreconditionError("Personal API keys are disabled in trusted mode")
+        key = generate_api_key(account_id, user_id)
+        result = await self._store.rotate_api_key(
+            account_id, user_id, key_id, key, expected_api_key=expected_api_key
+        )
+        return {**result, "api_key": key}
+
+    async def delete_api_key(self, account_id, user_id, key_id, *, expected_api_key=None):
+        self.require_writable()
+        return await self._store.delete_api_key(
+            account_id, user_id, key_id, expected_api_key=expected_api_key
+        )
+
+    async def get_login_info(self, account_id, user_id):
+        return await self._store.get_login_info(account_id, user_id)
+
+    async def set_login_password(self, account_id, user_id, password, **kwargs):
+        import asyncio
+
+        from argon2 import PasswordHasher
+
+        self.require_writable()
+        if not isinstance(password, str) or not 12 <= len(password) <= 128:
+            raise InvalidArgumentError("Password must contain 12 to 128 characters")
+        password_hash = await asyncio.to_thread(PasswordHasher().hash, password)
+        await self._store.set_login_password(account_id, user_id, password_hash, **kwargs)
+
+    async def invalidate_sessions(self, account_id, user_id):
+        return await self._store.invalidate_sessions(account_id, user_id)

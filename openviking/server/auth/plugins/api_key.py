@@ -45,6 +45,7 @@ def _remove_header(request: Request, name: bytes) -> None:
     request.scope["headers"] = [
         (key, value) for key, value in scope_headers if key.lower() != name.lower()
     ]
+    request.__dict__.pop("_headers", None)
 
 
 class ApiKeyAuthPlugin(AuthPlugin):
@@ -122,14 +123,11 @@ class ApiKeyAuthPlugin(AuthPlugin):
         if record is None:
             raise UnauthenticatedError("OAuth access token is invalid, expired, or revoked")
 
-        import hmac
-
         recorded_fp = record.authorizing_key_fp
         manager = request.app.state.api_key_manager
-        current_fp = await manager.get_user_key_fingerprint(
-            record.account_id, record.user_id
-        )
-        if not recorded_fp or not current_fp or not hmac.compare_digest(recorded_fp, current_fp):
+        if not recorded_fp or not await manager.is_key_fingerprint_active(
+            record.account_id, record.user_id, recorded_fp
+        ):
             raise UnauthenticatedError(
                 "OAuth token's authorizing API key has been rotated or revoked; "
                 "please re-authorize the client."
@@ -208,6 +206,7 @@ class ApiKeyAuthPlugin(AuthPlugin):
         if (
             identity.role == Role.ROOT
             and not identity.from_oauth
+            and not identity.from_session
             and not _api_key_root_can_access_path(path)
         ):
             raise PermissionDeniedError(

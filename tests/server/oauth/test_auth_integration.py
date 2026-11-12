@@ -98,6 +98,9 @@ class _StubKeyManager:
             return self._default_fp
         return self._fps.get((account_id, user_id))
 
+    async def is_key_fingerprint_active(self, account_id, user_id, fingerprint):
+        return await self.get_user_key_fingerprint(account_id, user_id) == fingerprint
+
     async def resolve_oauth_identity(self, account_id, user_id, role):
         return ResolvedIdentity(
             role=role,

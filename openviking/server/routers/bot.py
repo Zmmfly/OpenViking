@@ -114,7 +114,7 @@ def _attach_openviking_connection(
     enriched = dict(body)
     # Drop any client-claimed connection before deciding what (if anything) to attach.
     enriched.pop("openviking_connection", None)
-    api_key = _extract_forward_api_key(request)
+    api_key = ctx.api_key or _extract_forward_api_key(request)
     plugin = getattr(request.app.state, "auth_plugin", None)
     effective_auth_mode = _auth_mode(request)
     server_url = get_server_url_from_server_data(getattr(request.app.state, "config", None))
@@ -156,10 +156,7 @@ async def get_compile(
 ):
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail=(
-            "This endpoint is no longer supported. "
-            "Poll GET /api/v1/tasks/{task_id} instead."
-        ),
+        detail=("This endpoint is no longer supported. Poll GET /api/v1/tasks/{task_id} instead."),
     )
 
 
@@ -171,8 +168,7 @@ async def cancel_compile(
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
         detail=(
-            "This endpoint is no longer supported. "
-            "Use POST /api/v1/tasks/{task_id}/cancel instead."
+            "This endpoint is no longer supported. Use POST /api/v1/tasks/{task_id}/cancel instead."
         ),
     )
 

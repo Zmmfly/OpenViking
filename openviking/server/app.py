@@ -555,6 +555,9 @@ def create_app(
     app.add_middleware(HTTPObservabilityMiddleware)
     app.add_middleware(ProfileMiddleware)
     app.add_middleware(RequestTimingMiddleware)
+    from openviking.server.studio_auth import BrowserSessionCacheMiddleware
+
+    app.add_middleware(BrowserSessionCacheMiddleware)
 
     # Add exception handler for OpenVikingError
     @app.exception_handler(OpenVikingError)
@@ -702,6 +705,11 @@ def create_app(
     app.include_router(metrics_router)
     app.include_router(tasks_router)
     app.include_router(user_settings_router)
+    from openviking.server.routers.studio_auth import keys_router
+    from openviking.server.routers.studio_auth import router as studio_auth_router
+
+    app.include_router(studio_auth_router)
+    app.include_router(keys_router)
     app.include_router(watches_router)
     app.include_router(webdav_router)
     app.include_router(bot_router, prefix="/bot/v1")

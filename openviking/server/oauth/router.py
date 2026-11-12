@@ -33,7 +33,7 @@ from mcp.shared.auth import ProtectedResourceMetadata
 from pydantic import AnyHttpUrl, BaseModel, Field
 
 from openviking.server.auth import get_request_context
-from openviking.server.identity import RequestContext
+from openviking.server.identity import RequestContext, Role
 from openviking.server.oauth.provider import MCP_SCOPE, OpenVikingOAuthProvider
 from openviking.server.oauth.storage import OAuthStore
 from openviking_cli.exceptions import (
@@ -477,7 +477,7 @@ async def oauth_verify(
     verifier_fp: Optional[str] = None
     if manager is not None:
         verifier_fp = await manager.get_user_key_fingerprint(
-            ctx.user.account_id, ctx.user.user_id
+            ctx.user.account_id, ctx.user.user_id, None if ctx.from_session else ctx.api_key
         )
     if not verifier_fp:
         raise InvalidArgumentError(
@@ -489,7 +489,7 @@ async def oauth_verify(
         pending_id=record["pending_id"],
         account_id=ctx.user.account_id,
         user_id=ctx.user.user_id,
-        role=str(ctx.role),
+        role=str(Role.ADMIN if ctx.from_session and ctx.role == Role.ROOT else ctx.role),
         verified_key_fp=verifier_fp,
     )
     if not ok:

@@ -75,6 +75,17 @@ def create_dump_http_body_middleware(
         request: Request,
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
+        path = request.url.path
+        if path.startswith(
+            (
+                "/api/v1/auth/",
+                "/api/v1/me/api-keys",
+                "/api/v1/admin/configuration",
+                "/api/v1/admin/accounts",
+            )
+        ):
+            # Never copy passwords, generated keys or OIDC secrets into traces.
+            return await call_next(request)
         req_ct = request.headers.get("content-type", "")
         if not _should_skip(req_ct):
             try:

@@ -409,6 +409,8 @@ class ServerConfig(BaseModel):
     timeout_keep_alive: int = 5
     auth_mode: Optional[str] = None  # If None, auto-detect based on root_api_key
     root_api_key: Optional[str] = None
+    studio_login_enabled: bool = True
+    studio_session_hours: int = Field(default=12, ge=1, le=168)
     # OIDC/LDAP authentication configuration
     oidc: Optional[OIDCConfig] = None
     ldap: Optional[LDAPConfig] = None

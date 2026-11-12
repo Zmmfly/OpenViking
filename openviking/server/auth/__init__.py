@@ -99,7 +99,7 @@ def _get_plugin(request: Request):
 
 def _uses_local_account_store(plugin) -> bool:
     """Whether request authorization is backed by server-managed identities."""
-    return plugin.auth_mode in (AuthMode.API_KEY.value, AuthMode.TRUSTED.value)
+    return plugin.auth_mode in (AuthMode.API_KEY.value, AuthMode.TRUSTED.value, "oidc")
 
 
 async def resolve_group_ids(request: Request, account_id: str, user_id: str) -> tuple[str, ...]:
@@ -140,9 +140,25 @@ async def _build_request_context(
         group_ids=group_ids,
         actor_peer_id=actor_peer_id,
         from_oauth=identity.from_oauth,
+        from_session=identity.from_session,
         api_key=api_key,
     )
+    if identity.from_session:
+        from openviking.server.studio_auth import browser_forward_credential
+
+        ctx.api_key = browser_forward_credential(request, identity)
     manager = getattr(request.app.state, "api_key_manager", None)
+    if (
+        not has_auth_groups
+        and _uses_local_account_store(plugin)
+        and ctx.role != Role.ROOT
+        and manager is not None
+        and hasattr(manager, "get_user")
+    ):
+        loader = getattr(manager, "get_user_for_auth", manager.get_user)
+        user = await loader(ctx.account_id, ctx.user.user_id)
+        if user and user.get("disabled"):
+            raise UnauthenticatedError("User is disabled")
     deletion = None
     if (
         not has_auth_groups
@@ -180,6 +196,20 @@ async def resolve_identity(
     x_openviking_account = _normalize_header_value(x_openviking_account)
     x_openviking_user = _normalize_header_value(x_openviking_user)
     api_key = _extract_api_key(x_api_key, authorization)
+
+    if api_key and api_key.startswith("ovsf_") and api_key.count(".") == 1:
+        import hmac
+
+        from openviking.server.studio_auth import browser_login_enabled
+
+        root_key = getattr(getattr(request.app.state, "config", None), "root_api_key", "") or ""
+        if not hmac.compare_digest(api_key, root_key) and not browser_login_enabled(request):
+            raise UnauthenticatedError("Browser forwarding authorization is disabled")
+
+    if not api_key and request.cookies.get("ov_studio_session"):
+        from openviking.server.studio_auth import resolve_browser_session
+
+        return await resolve_browser_session(request)
 
     plugin = _get_plugin(request)
     return await plugin.resolve_identity(
@@ -463,5 +493,6 @@ def is_personal_api_key_auth(request: Request | None, ctx: RequestContext) -> bo
         request is not None
         and _auth_mode(request) == "api_key"
         and not ctx.from_oauth
+        and not ctx.from_session
         and bool(ctx.api_key)
     )

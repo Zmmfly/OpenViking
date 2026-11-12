@@ -80,10 +80,19 @@ class RegisterUserRequest(BaseModel):
     role: str = "user"
     seed: str | None = None
     user_config: UserConfig | None = None
+    password: str | None = Field(default=None, min_length=12, max_length=128, repr=False)
 
 
 class SetRoleRequest(BaseModel):
     role: str
+
+
+class SetUserDisabledRequest(BaseModel):
+    disabled: bool
+
+
+class SetPasswordRequest(BaseModel):
+    password: str = Field(min_length=12, max_length=128, repr=False)
 
 
 class RegenerateKeyRequest(BaseModel):
@@ -265,6 +274,8 @@ async def _reject_non_root_global_target(
     user = await manager.get_user_membership(account_id, user_id)
     if user is not None and user["role"] == Role.GLOBAL:
         raise PermissionDeniedError("Only ROOT can manage GLOBAL identities")
+    if user is not None and user.get("is_server_admin"):
+        raise PermissionDeniedError("Only ROOT can manage server administrators")
 
 
 async def _reject_global_role_change_target(
@@ -1029,6 +1040,8 @@ async def register_user(
         str(resolved_role),
         seed=body.seed,
     )
+    if body.password is not None:
+        await manager.set_login_password(account_id, body.user_id, body.password)
     await service.initialize_user_directories(user_ctx)
     await _write_initial_user_config(service, user_ctx, body.user_config)
     result = {
@@ -1087,6 +1100,8 @@ async def list_users(
             {
                 "user_id": user["user_id"],
                 "role": user["role"],
+                **({"disabled": True} if user.get("disabled") else {}),
+                **({"is_server_admin": True} if user.get("is_server_admin") else {}),
                 # A key prefix identifies a hash-only credential, which cannot
                 # be supplied to server-side Gateway or Bot Studio bindings.
                 **(
@@ -1119,7 +1134,14 @@ async def get_user(
     user = await _get_api_key_manager(request).get_user_membership(account_id, user_id)
     if user is None:
         raise NotFoundError(user_id, "user")
-    return Response(status="ok", result={"user_id": user_id, "role": user["role"]})
+    return Response(
+        status="ok",
+        result={
+            "user_id": user_id,
+            "role": user["role"],
+            **({"disabled": True} if user.get("disabled") else {}),
+        },
+    )
 
 
 @router.get("/accounts/{account_id}/users/{user_id}/settings")
@@ -1245,6 +1267,47 @@ async def set_user_role(
     )
 
 
+@router.put("/accounts/{account_id}/users/{user_id}/disabled")
+@require_auth_root_or_admin
+async def set_user_disabled(
+    body: SetUserDisabledRequest,
+    request: Request,
+    account_id: str,
+    user_id: str,
+    ctx: RequestContext = Depends(get_request_context),
+):
+    _check_account_access(ctx, account_id)
+    await _reject_non_root_global_target(request, ctx, account_id, user_id)
+    if (
+        body.disabled
+        and (ctx.from_session or ctx.role != Role.ROOT)
+        and account_id == ctx.account_id
+        and user_id == ctx.user.user_id
+    ):
+        raise PermissionDeniedError("Cannot disable your own identity")
+    await _get_api_key_manager(request, for_write=True).set_user_disabled(
+        account_id, user_id, body.disabled
+    )
+    return Response(status="ok", result={"user_id": user_id, "disabled": body.disabled})
+
+
+@router.put("/accounts/{account_id}/users/{user_id}/password")
+@require_auth_root_or_admin
+async def set_user_password(
+    body: SetPasswordRequest,
+    request: Request,
+    account_id: str,
+    user_id: str,
+    ctx: RequestContext = Depends(get_request_context),
+):
+    _check_account_access(ctx, account_id)
+    await _reject_non_root_global_target(request, ctx, account_id, user_id)
+    await _get_api_key_manager(request, for_write=True).set_login_password(
+        account_id, user_id, body.password
+    )
+    return Response(status="ok", result={"user_id": user_id})
+
+
 @router.post("/accounts/{account_id}/users/{user_id}/key")
 @require_auth_role(Role.ROOT, Role.ADMIN, Role.USER)
 async def regenerate_key(
@@ -1260,14 +1323,14 @@ async def regenerate_key(
     if ctx.role == Role.USER:
         if user_id != ctx.user.user_id:
             raise PermissionDeniedError("USER can only regenerate their own API key")
-        if not is_personal_api_key_auth(request, ctx):
+        if not ctx.from_session and not is_personal_api_key_auth(request, ctx):
             raise PermissionDeniedError("Self-service key rotation requires a personal API key")
     manager = _get_api_key_manager(request, for_write=True)
     new_key = await manager.regenerate_key(
         account_id,
         user_id,
         seed=body.seed if body is not None else None,
-        expected_api_key=ctx.api_key if ctx.role == Role.USER else None,
+        expected_api_key=ctx.api_key if ctx.role == Role.USER and not ctx.from_session else None,
     )
     return Response(status="ok", result={"user_key": new_key})
 

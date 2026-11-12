@@ -149,11 +149,12 @@ class ResolvedIdentity:
     # API-key snapshots provide resolved groups (including empty). Trusted
     # plugins may supply asserted groups; absent groups use the local registry.
     group_ids: tuple[str, ...] | None = None
-    # True when this identity was minted from an OAuth-issued bearer token;
+    # True for OAuth bearers and session-bound service forwarding tokens;
     # downstream checks (e.g. ROOT-requires-explicit-tenant headers) can skip
-    # rules that target raw API-key auth, since OAuth claims already pin
+    # rules that target raw API-key auth, since delegated claims already pin
     # account/user.
     from_oauth: bool = False
+    from_session: bool = False
 
     def __post_init__(self) -> None:
         self.role = Role.parse(self.role)
@@ -308,6 +309,7 @@ class RequestContext:
     # prevent a stolen access token from laundering itself into a long-lived
     # refresh-token chain.
     from_oauth: bool = False
+    from_session: bool = False
     # Raw API key from the request — used by Connector to call back into OV
     # on behalf of the original user
     api_key: Optional[str] = field(default=None, repr=False)
