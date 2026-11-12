@@ -21,6 +21,32 @@ viking://user/alice/
 
 ## Prerequisites
 
+### Sign in to self-hosted Studio
+
+With `server.root_api_key` configured in `api_key` mode, `/studio/` opens a dedicated sign-in page. On the first deployment, choose **Initialize administrator** and enter the account, username, a 12–128 character password and the server root key. This administrator has platform privileges. Subsequent sign-ins require only the account, username and password.
+
+In **User management**, administrators can create users with initial passwords, delete or disable users, enable them again and reset passwords. Disabling retains data while blocking browser sessions, API keys and OAuth access. The current identity and the last active administrator cannot be disabled. Account administrators cannot modify platform administrator identities.
+
+Users can change their passwords and manage personal API keys under **My account**. A new key accepts a label and can be rotated or deleted independently. Copy generated secrets immediately: they are shown only once. Browser login is independent of SDK credentials, so deleting every personal API key does not end the browser session. SDK and CLI authentication continues to use API keys.
+
+Sessions use HttpOnly cookies and expire after 12 hours by default. Logout or a password change revokes the user's existing browser sessions. Set `server.studio_session_hours` to 1–168 hours to change the lifetime, or `server.studio_login_enabled: false` to disable browser login. Use HTTPS for network deployments and forward the correct request scheme through the reverse proxy.
+
+### OIDC single sign-on
+
+A platform administrator can open **Configuration → Server** and complete the **Single sign-on (OIDC)** form with the issuer, client ID, client secret and identity mappings. Register the displayed redirect URI with the identity provider:
+
+SSO requires the optional JWT dependency. If it is not installed, run `pip install 'python-jose[cryptography]'` in the server's Python environment and restart the service.
+
+```text
+https://your-server/api/v1/auth/oidc/callback
+```
+
+Apply the form to the draft, save the configuration and restart the server. The sign-in page will offer SSO while retaining local password login. Create matching local users first: mapped account and user IDs must match the local registry. OpenViking controls roles and suspension. The browser flow validates Authorization Code, PKCE, state and nonce.
+
+File account stores preserve existing user records. Before upgrading an existing MySQL or Redis-MySQL deployment, apply `openviking/server/account_stores/sql/changes/0002_user_management_login.sql`. New deployments use the updated `sql/init.sql`.
+
+### CLI example setup
+
 Complete [Authentication](17-authentication.md), creating Alice and Bob as ordinary users in `acme` and saving `acme-alice` and `acme-bob` connections. This example creates an empty private directory and a session without triggering memory extraction.
 
 ## Create private content
