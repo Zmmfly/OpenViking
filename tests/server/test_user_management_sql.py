@@ -94,9 +94,12 @@ async def test_relational_keys_and_suspension(store):
     assert await store.verify_api_key(primary) == ("team", "admin")
 
 
-async def test_relational_login_versions_revoke_sessions(store):
+@pytest.mark.parametrize("lease_ref", [None, {"lease_ref": "workspace-tree"}])
+async def test_relational_login_versions_revoke_sessions(store, lease_ref):
     await store.create_account("team", "admin")
-    await store.set_login_password("team", "admin", "encoded-password", server_admin=True)
+    await store.set_login_password(
+        "team", "admin", "encoded-password", server_admin=True, lease_ref=lease_ref
+    )
     login = await store.get_login_info("team", "admin")
     assert login["password_hash"] == "encoded-password" and login["is_server_admin"]
     await store.invalidate_sessions("team", "admin")

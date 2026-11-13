@@ -2,8 +2,9 @@
 
 import asyncio
 import json
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import httpx
 import pytest
@@ -271,6 +272,103 @@ async def test_server_administrator_role_is_fixed_even_with_another_admin(runtim
         await client.put("/api/v1/admin/accounts/team/users/team-admin/role", json={"role": "user"})
     ).status_code == 200
     assert (await client.get("/api/v1/auth/session")).json()["result"]["role"] == "root"
+
+
+def _workspace_creation(runtime, monkeypatch):
+    from openviking.server.routers import admin
+
+    @asynccontextmanager
+    async def workspace_lock(_ctx):
+        yield {"lease_ref": "workspace-test"}
+
+    runtime.service.account_workspace_lock = workspace_lock
+    runtime.service.initialize_account_workspace = AsyncMock()
+    runtime.service.release_account_vector_resources = AsyncMock()
+    config = SimpleNamespace(validate_initial_settings=Mock(), delete_account=AsyncMock())
+    monkeypatch.setattr(admin, "_get_runtime_config_manager", lambda: config)
+    return config
+
+
+async def test_workspace_creation_sets_first_administrator_password(runtime, monkeypatch):
+    _workspace_creation(runtime, monkeypatch)
+    await _bootstrap(runtime)
+    response = await runtime.client.post(
+        "/api/v1/admin/accounts",
+        json={"account_id": "research", "admin_user_id": "admin", "password": PASSWORD},
+    )
+    assert response.status_code == 200, response.text
+    assert PASSWORD not in response.text
+    assert (await runtime.client.get("/api/v1/auth/session")).json()["result"]["role"] == "root"
+    # The same username in another workspace has independent login and role state.
+    response = await runtime.client.post(
+        "/api/v1/auth/login",
+        json={"account_id": "research", "user_id": "admin", "password": PASSWORD},
+    )
+    assert response.status_code == 200
+    identity = (await runtime.client.get("/api/v1/auth/session")).json()["result"]
+    assert identity["account_id"] == "research" and identity["role"] == "admin"
+    assert (
+        await runtime.client.post(
+            "/api/v1/admin/accounts",
+            json={"account_id": "denied", "admin_user_id": "admin", "password": PASSWORD},
+        )
+    ).status_code == 403
+    assert not await runtime.manager.get_account("denied")
+
+
+async def test_workspace_invalid_password_does_not_create_account(runtime, monkeypatch):
+    _workspace_creation(runtime, monkeypatch)
+    await _bootstrap(runtime)
+    response = await runtime.client.post(
+        "/api/v1/admin/accounts",
+        json={"account_id": "invalid", "admin_user_id": "admin", "password": "short"},
+    )
+    assert response.status_code == 400
+    assert not await runtime.manager.get_account("invalid")
+    runtime.service.initialize_account_workspace.assert_not_called()
+
+
+async def test_workspace_password_failure_rolls_back_account(runtime, monkeypatch):
+    config = _workspace_creation(runtime, monkeypatch)
+    await _bootstrap(runtime)
+    monkeypatch.setattr(
+        runtime.manager,
+        "set_login_password",
+        AsyncMock(side_effect=RuntimeError("password store unavailable")),
+    )
+    response = await runtime.client.post(
+        "/api/v1/admin/accounts",
+        json={"account_id": "incomplete", "admin_user_id": "admin", "password": PASSWORD},
+    )
+    assert response.status_code == 500
+    assert not await runtime.manager.get_account("incomplete")
+    assert await runtime.manager.get_account("team")
+    config.delete_account.assert_awaited_once_with("incomplete")
+
+
+@pytest.mark.parametrize("borrow_lease", [False, True])
+async def test_password_setup_preserves_account_workspace_lease(runtime, monkeypatch, borrow_lease):
+    manager = runtime.manager
+    await manager.create_account("team", "admin")
+    agfs = manager._store._async_agfs
+    acquire = AsyncMock(wraps=agfs.pathlock_acquire_exact)
+    release = AsyncMock(wraps=agfs.pathlock_release)
+    monkeypatch.setattr(agfs, "pathlock_acquire_exact", acquire)
+    monkeypatch.setattr(agfs, "pathlock_release", release)
+    await manager.set_login_password(
+        "team",
+        "admin",
+        PASSWORD,
+        lease_ref={"lease_ref": "workspace-tree"} if borrow_lease else None,
+    )
+    login = await manager.get_login_info("team", "admin")
+    assert PasswordHasher().verify(login["password_hash"], PASSWORD)
+    if borrow_lease:
+        acquire.assert_not_awaited()
+        release.assert_not_awaited()
+    else:
+        acquire.assert_awaited_once()
+        release.assert_awaited_once()
 
 
 @pytest.mark.parametrize(

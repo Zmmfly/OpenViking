@@ -1688,7 +1688,9 @@ class MySQLAccountStore(AccountStore):
         server_admin=False,
         only_if_unset=False,
         expected_session_version=None,
+        lease_ref=None,
     ):
+        del lease_ref
         async with self._transaction() as session:
             account = await self._lock_account(session, account_id)
             self._require_active(account)

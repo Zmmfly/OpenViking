@@ -169,6 +169,7 @@ class AccountStore(ABC):
         server_admin: bool = False,
         only_if_unset: bool = False,
         expected_session_version: str | None = None,
+        lease_ref: object | None = None,
     ) -> None:
         raise NotImplementedError
 

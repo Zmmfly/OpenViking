@@ -1751,14 +1751,18 @@ class FileStore(AccountStore):
         )
 
     @asynccontextmanager
-    async def _edit_user(self, account_id: str, user_id: str, expected_api_key=None):
+    async def _edit_user(
+        self, account_id: str, user_id: str, expected_api_key=None, *, lease_ref=None
+    ):
         """Read, validate and write under the same cross-process registry lease."""
         self._require_writable()
         async with self._mutation_lock:
             await self._refresh_accounts_for_management_read_unlocked()
             self._ensure_account_active(account_id)
             path = USERS_PATH_TEMPLATE.format(account_id=account_id)
-            lease = await self._async_agfs.pathlock_acquire_exact(path, timeout_secs=10.0)
+            lease = lease_ref
+            if lease is None:
+                lease = await self._async_agfs.pathlock_acquire_exact(path, timeout_secs=10.0)
             try:
                 data = await self._read_json(path) or {"users": {}}
                 users = data.get("users", {})
@@ -1779,7 +1783,8 @@ class FileStore(AccountStore):
                 yield user, users
                 await self._save_users_json(account_id, {user_id: user}, lease_ref=lease)
             finally:
-                await self._async_agfs.pathlock_release(lease)
+                if lease_ref is None:
+                    await self._async_agfs.pathlock_release(lease)
 
     async def set_user_disabled(self, account_id: str, user_id: str, disabled: bool) -> None:
         async with self._edit_user(account_id, user_id) as (user, users):
@@ -1868,8 +1873,9 @@ class FileStore(AccountStore):
         server_admin=False,
         only_if_unset=False,
         expected_session_version=None,
+        lease_ref=None,
     ):
-        async with self._edit_user(account_id, user_id) as (user, _):
+        async with self._edit_user(account_id, user_id, lease_ref=lease_ref) as (user, _):
             login = user.setdefault("login", {})
             if (
                 expected_session_version is not None

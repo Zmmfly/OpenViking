@@ -68,6 +68,7 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 class CreateAccountRequest(BaseModel):
     account_id: str
     admin_user_id: str
+    password: str | None = Field(default=None, min_length=12, max_length=128, repr=False)
     seed: str | None = None
     user_config: UserConfig | None = None
     # Optional initial AccountConfig override, validated against the active
@@ -502,6 +503,10 @@ async def create_account(
                 lease_ref=lease,
             )
             account_created = True
+            if body.password is not None:
+                await manager.set_login_password(
+                    body.account_id, body.admin_user_id, body.password, lease_ref=lease
+                )
             if body.settings and runtime_config is not None:
                 # Persist the pre-validated override.
                 await runtime_config.patch_account(
