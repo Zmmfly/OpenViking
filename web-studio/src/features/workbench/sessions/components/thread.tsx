@@ -51,7 +51,7 @@ function SessionThread({ sessionId, draft = false, onPersisted }: ThreadProps) {
       mounted.current = false
     }
   }, [])
-  const { data: session } = useSession(historyId)
+  const { data: session, isPending: sessionLoading } = useSession(historyId)
   const {
     data: historyMessages,
     isPending: historyLoading,
@@ -61,6 +61,7 @@ function SessionThread({ sessionId, draft = false, onPersisted }: ThreadProps) {
   const chat = useChat({
     identityScopeKey,
     sessionId,
+    peerId: session?.peer_id,
     initialMessages: historyMessages,
     persistMessages: true,
   })
@@ -69,7 +70,13 @@ function SessionThread({ sessionId, draft = false, onPersisted }: ThreadProps) {
 
   const handleSend = useCallback(
     async (message: string) => {
-      if (!canChat || !message.trim() || creating.current) return false
+      if (
+        !canChat ||
+        !message.trim() ||
+        creating.current ||
+        (historyId && sessionLoading === true)
+      )
+        return false
       if (!persisted.current) {
         creating.current = true
         setCreationError(undefined)
@@ -94,7 +101,15 @@ function SessionThread({ sessionId, draft = false, onPersisted }: ThreadProps) {
       }
       return true
     },
-    [canChat, chat, createSession, sessionId, onPersisted],
+    [
+      canChat,
+      chat,
+      createSession,
+      sessionId,
+      onPersisted,
+      historyId,
+      sessionLoading,
+    ],
   )
 
   // ---- Auto-scroll ----
@@ -152,11 +167,18 @@ function SessionThread({ sessionId, draft = false, onPersisted }: ThreadProps) {
       )}
 
       <div className="relative z-10 flex h-12 items-center justify-between gap-4 border-b border-border/50 bg-background/95 px-6">
-        <h2 className="truncate text-sm font-medium text-foreground">
-          {draft && title === sessionId
-            ? t('threadList.newSession')
-            : title || sessionId}
-        </h2>
+        <div className="grid min-w-0 gap-0.5">
+          <h2 className="truncate text-sm font-medium text-foreground">
+            {draft && title === sessionId
+              ? t('threadList.newSession')
+              : title || sessionId}
+          </h2>
+          {session?.peer_id && (
+            <span className="truncate text-xs text-muted-foreground">
+              {t('account:peerSessionLabel', { peer: session.peer_id })}
+            </span>
+          )}
+        </div>
         {service.provider === 'opensource' ? (
           <MemoryImpact session={session} />
         ) : null}

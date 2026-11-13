@@ -18,6 +18,7 @@ export type SessionListItem = {
 }
 
 export type SessionDetail = {
+  peer_id?: string
   commit_count: number
   created_at: string
   embedding_token_usage: {
@@ -47,6 +48,7 @@ export type SessionArchiveResult = {
 }
 
 export type SessionCreatedResult = {
+  peer_id?: string
   session_id: string
   user: UserIdentifier
 }

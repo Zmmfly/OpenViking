@@ -69,6 +69,7 @@ export type MessagePart =
 /** A single message in a session (matches backend Message.to_dict()). */
 export interface Message {
   id: string
+  peer_id?: string
   turn_id?: string
   message_kind?:
     | 'user_query'

@@ -1,4 +1,46 @@
 export default {
+  workspacesTitle: '账户 / 工作区',
+  workspacesDescription:
+    '管理独立的工作区及其成员。各工作区分别保存记忆和资源。',
+  workspacesRootRequired: '只有平台管理员可以管理账户和工作区。',
+  workspaceId: '工作区 ID',
+  createWorkspace: '新建工作区',
+  createWorkspaceDescription:
+    '创建独立的数据空间及首位账户管理员，并设置用于网页登录的密码。',
+  initialAdministrator: '初始管理员用户名',
+  workspaceCreated: '工作区 {{account}} 已创建',
+  memberCount: '成员数',
+  manageMembers: '管理用户',
+  searchWorkspaces: '搜索工作区',
+  noWorkspaces: '没有匹配的工作区。',
+  actions: '操作',
+  refresh: '刷新',
+  peersTitle: 'Peer 管理',
+  peersDescription:
+    '在自己的用户空间中，为交互对象或协作 Agent 分别管理记忆和资料。',
+  peersUnavailable: 'Peer 管理适用于自部署的 OpenViking 服务。',
+  peerScopeHint:
+    '每个 Peer 有独立的记忆和资料目录，均归属于当前用户；用户自身记忆及可访问的共享资料仍可共用。',
+  createPeer: '新建 Peer',
+  createPeerDescription:
+    '为交互对象或 Agent 选择稳定的 ID。使用相同 ID 会继续沿用该 Peer 空间。',
+  peerId: 'Peer ID',
+  peerIdHint:
+    '最多 255 个字符，可包含字母、数字、点、下划线、连字符及一个 @；不能包含路径分隔符，不能使用 .、.. 或保留名称 __self。',
+  peerCreated: 'Peer 空间已就绪',
+  searchPeers: '搜索 Peer',
+  noPeers: '暂无 Peer，新建后即可分别管理其记忆和资料。',
+  peerMemories: '查看记忆',
+  peerResources: '查看资料',
+  newPeerSession: '新建 Peer 会话',
+  newSessionDescription: '选择本次会话积累记忆的对象，选择会随会话保存。',
+  sessionMemoryScope: '记忆对象',
+  selfMemory: '我的记忆',
+  peerSessionHint:
+    '消息会标记所选 Peer，提交时仅提取该对象的记忆；仍可读取用户自身记忆及可访问的共享资料。',
+  selfSessionHint: '沿用当前用户已有的记忆提取策略。',
+  peerSessionLabel: '交互对象：{{peer}}',
+  createSession: '创建会话',
   usersDescription: '管理当前账户的成员、角色和登录权限。',
   userListDescription: '添加用户、设置密码、调整角色，或禁用和移除用户。',
   createUserDescription: '在 {{accountId}} 中创建用户，并设置初始登录密码。',

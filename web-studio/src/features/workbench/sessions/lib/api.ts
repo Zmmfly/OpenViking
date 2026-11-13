@@ -60,10 +60,17 @@ export async function fetchSession(sessionId: string): Promise<SessionMeta> {
 
 export async function createSession(
   sessionId?: string,
+  peerId?: string,
 ): Promise<CreateSessionResult> {
   return getOvResult<CreateSessionResult>(
     postSessions({
-      body: sessionId ? { session_id: sessionId } : undefined,
+      body:
+        sessionId || peerId
+          ? {
+              ...(sessionId ? { session_id: sessionId } : {}),
+              ...(peerId ? { peer_id: peerId } : {}),
+            }
+          : undefined,
     }),
   )
 }
@@ -326,6 +333,7 @@ export async function addMessage(
   role: 'user' | 'assistant',
   content?: string,
   parts?: Array<Record<string, unknown>>,
+  peerId?: string,
 ): Promise<AddMessageResult> {
   return getOvResult<AddMessageResult>(
     postSessionIdMessages({
@@ -334,6 +342,7 @@ export async function addMessage(
         role,
         content: parts ? undefined : content,
         parts: parts ?? undefined,
+        ...(peerId ? { peer_id: peerId } : {}),
       },
     }),
   )
@@ -477,6 +486,7 @@ export async function fetchBotHealth(): Promise<unknown> {
 export async function sendChatStream(
   request: BotChatRequest,
   signal?: AbortSignal,
+  actorPeerId?: string,
 ): Promise<ReturnType<typeof fetchSse>> {
   const baseUrl = ovClient.getOptions().baseUrl
   const conn = ovClient.getConnection()
@@ -484,6 +494,7 @@ export async function sendChatStream(
     method: 'POST',
     headers: {
       ...buildFetchHeaders(),
+      ...(actorPeerId ? { 'X-OpenViking-Actor-Peer': actorPeerId } : {}),
       Accept: 'text/event-stream',
     },
     body: JSON.stringify({
@@ -522,6 +533,7 @@ export type SteerChatSessionResult = {
 export async function steerChatSession(
   sessionId: string,
   request: BotChatRequest,
+  actorPeerId?: string,
 ): Promise<SteerChatSessionResult> {
   const baseUrl = ovClient.getOptions().baseUrl
   const conn = ovClient.getConnection()
@@ -529,7 +541,10 @@ export async function steerChatSession(
     `${baseUrl}/bot/v1/sessions/${encodeURIComponent(sessionId)}/steer`,
     {
       method: 'POST',
-      headers: buildFetchHeaders(),
+      headers: {
+        ...buildFetchHeaders(),
+        ...(actorPeerId ? { 'X-OpenViking-Actor-Peer': actorPeerId } : {}),
+      },
       body: JSON.stringify({
         ...request,
         session_id: sessionId,

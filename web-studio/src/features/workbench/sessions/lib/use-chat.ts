@@ -30,10 +30,11 @@ import { setSessionTitle } from '#/features/workbench/sessions/lib/use-session-t
 import { ovClient } from '#/shared/api/ov-client/index'
 import { createBrowserId } from '#/shared/lib/browser-crypto'
 
-function createUserMessage(content: string): Message {
+function createUserMessage(content: string, peerId?: string): Message {
   return {
     id: createBrowserId('msg'),
     role: 'user',
+    ...(peerId ? { peer_id: peerId } : {}),
     parts: [{ type: 'text', text: content }],
     created_at: new Date().toISOString(),
   }
@@ -167,6 +168,7 @@ function buildAssistantMessage(
 export interface UseChatOptions {
   identityScopeKey: string
   sessionId: string
+  peerId?: string
   /** Initial messages to populate the chat. */
   initialMessages?: Message[]
   /** Whether to persist messages via the sessions API after each exchange. */
@@ -193,6 +195,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
   const {
     identityScopeKey,
     sessionId,
+    peerId,
     initialMessages,
     persistMessages = true,
   } = options
@@ -365,7 +368,11 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       const isFirstExchange = messagesRef.current.length === 0
       const displayMessage = sendOptions?.displayMessage ?? message
 
-      const userMsg = createUserMessage(displayMessage)
+      const userMsg = createUserMessage(displayMessage, peerId)
+      const persistUserMessage = (content: string) =>
+        peerId
+          ? addMessage(sessionId, 'user', content, undefined, peerId)
+          : addMessage(sessionId, 'user', content)
       const connectionSnapshot = JSON.stringify([
         ovClient.getOptions(),
         ovClient.getConnection(),
@@ -387,7 +394,9 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         })
         const appended = appendInput(userMsg, accepted)
         try {
-          const result = await steerChatSession(sessionId, { message })
+          const result = await (peerId
+            ? steerChatSession(sessionId, { message }, peerId)
+            : steerChatSession(sessionId, { message }))
           if (!result.accepted)
             throw new Error(i18n.t('studio:errors.inputRejected'))
           resolveAccepted(true)
@@ -462,7 +471,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         initialUserPersistenceQueued = true
         void queuePersistence(async () => {
           if (!isCurrent() || controller.signal.aborted) return
-          await addMessage(sessionId, 'user', displayMessage)
+          await persistUserMessage(displayMessage)
           persistedInitialUserMessage = true
         })
       }
@@ -656,16 +665,14 @@ export function useChat(options: UseChatOptions): UseChatReturn {
             streamStarted
           ) {
             if (!isCurrent() || controller.signal.aborted) return
-            await addMessage(sessionId, 'user', displayMessage)
+            await persistUserMessage(displayMessage)
             persistedInitialUserMessage = true
           }
           if (!isSameConnection()) return
           for (const completedMessage of timeline) {
             if (!isSameConnection()) return
             if (completedMessage.role === 'user') {
-              await addMessage(
-                sessionId,
-                'user',
+              await persistUserMessage(
                 completedMessage.parts
                   .filter((part): part is TextPart => part.type === 'text')
                   .map((part) => part.text)
@@ -699,10 +706,10 @@ export function useChat(options: UseChatOptions): UseChatReturn {
       }
 
       try {
-        const response = await sendChatStream(
-          { message, session_id: sessionId },
-          controller.signal,
-        )
+        const request = { message, session_id: sessionId }
+        const response = await (peerId
+          ? sendChatStream(request, controller.signal, peerId)
+          : sendChatStream(request, controller.signal))
 
         stream: for await (const event of parseSseStream(response)) {
           if (controller.signal.aborted) break
@@ -952,7 +959,7 @@ export function useChat(options: UseChatOptions): UseChatReturn {
         }
       }
     },
-    [identityScopeKey, persistMessages, queuePersistence, sessionId],
+    [identityScopeKey, peerId, persistMessages, queuePersistence, sessionId],
   )
 
   return {

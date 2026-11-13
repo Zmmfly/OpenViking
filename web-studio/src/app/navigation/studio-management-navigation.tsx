@@ -9,6 +9,7 @@ import {
 import { Link } from '@tanstack/react-router'
 import {
   BookOpenTextIcon,
+  Building2Icon,
   BotIcon,
   BracesIcon,
   ServerCogIcon,
@@ -62,6 +63,15 @@ export function StudioManagementNavigation({
 }) {
   const { t } = useTranslation(['appShell', 'settings'])
   const serviceItems = [
+    ...(isRoot && !gatewayOnly && !developmentMode
+      ? [
+          {
+            to: '/admin/accounts',
+            title: 'account:workspacesTitle',
+            icon: Building2Icon,
+          },
+        ]
+      : []),
     ...(isRoot && !gatewayOnly
       ? ([
           {

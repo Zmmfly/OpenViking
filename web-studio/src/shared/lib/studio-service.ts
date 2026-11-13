@@ -41,6 +41,7 @@ export const STUDIO_FEATURES = [
   { id: 'filesystem', domain: 'workspace', to: '/filesystem' },
   { id: 'directory', domain: 'workspace', to: '/directory' },
   { id: 'memories', domain: 'workspace', to: '/memories' },
+  { id: 'peers', domain: 'extensions', to: '/peers' },
   { id: 'retrieval', domain: 'workspace', to: '/retrieval' },
   { id: 'skills', domain: 'workspace', to: '/skills' },
   { id: 'sessions', domain: 'workspace', to: '/sessions' },
@@ -80,6 +81,7 @@ export const STUDIO_FEATURES = [
     to: '/admin/agent-evolution',
   },
   { id: 'users', domain: 'management', to: '/admin/users' },
+  { id: 'accounts', domain: 'management', to: '/admin/accounts' },
   { id: 'permissions', domain: 'management', to: '/permissions' },
 ] as const satisfies ReadonlyArray<{
   id: string

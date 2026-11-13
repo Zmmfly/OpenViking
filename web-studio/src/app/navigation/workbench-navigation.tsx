@@ -25,6 +25,7 @@ import {
   ScrollTextIcon,
   SearchIcon,
   SparklesIcon,
+  UsersRoundIcon,
   WorkflowIcon,
 } from 'lucide-react'
 import * as React from 'react'
@@ -81,6 +82,13 @@ export const NAV_ITEMS: readonly NavItem[] = [
     section: 'workspace',
     titleKey: 'navigation.retrieval.title',
     to: '/retrieval',
+  },
+  {
+    icon: UsersRoundIcon,
+    id: 'peers',
+    section: 'workspace',
+    titleKey: 'account:peersTitle',
+    to: '/peers',
   },
   {
     icon: SparklesIcon,

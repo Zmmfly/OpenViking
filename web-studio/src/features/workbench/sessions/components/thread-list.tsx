@@ -12,8 +12,8 @@ import { toast } from 'sonner'
 import { useAppConnection } from '#/features/connection/hooks/use-app-connection'
 import { useStudioService } from '#/features/connection/hooks/use-studio-service'
 import { useSessionTitles } from '#/features/workbench/sessions/lib/use-session-titles'
+import { NewSessionDialog } from '#/features/workbench/sessions/components/new-session-dialog'
 import {
-  useCreateSession,
   useDeleteSession,
   useSessionListByRecency,
 } from '#/features/workbench/sessions/lib/use-sessions'
@@ -49,19 +49,13 @@ export function ThreadList({ activeSessionId, className }: ThreadListProps) {
     isPending,
     refetch,
   } = useSessionListByRecency()
-  const { getTitle, removeTitle, setTitle } = useSessionTitles(identityScopeKey)
-  const createSession = useCreateSession()
+  const { getTitle, removeTitle } = useSessionTitles(identityScopeKey)
+  const [newSessionOpen, setNewSessionOpen] = useState(false)
   const deleteSession = useDeleteSession()
   const [sessionToDelete, setSessionToDelete] = useState<{
     id: string
     title: string
   } | null>(null)
-
-  const handleNewSession = useCallback(async () => {
-    const result = await createSession.mutateAsync(undefined)
-    setTitle(result.session_id, t('threadList.newSession'))
-    void navigate({ to: '/sessions', search: { s: result.session_id } })
-  }, [createSession, navigate, setTitle, t])
 
   const handleDeleteSession = useCallback(async () => {
     if (!sessionToDelete) return
@@ -123,20 +117,19 @@ export function ThreadList({ activeSessionId, className }: ThreadListProps) {
             type="button"
             size="icon-sm"
             variant="outline"
-            disabled={createSession.isPending}
-            onClick={handleNewSession}
+            onClick={() => setNewSessionOpen(true)}
             aria-label={t('threadList.newSession')}
             title={t('threadList.newSession')}
           >
-            {createSession.isPending ? (
-              <LoaderCircleIcon className="animate-spin" />
-            ) : (
-              <PlusIcon />
-            )}
+            <PlusIcon />
           </Button>
         ) : null}
       </div>
 
+      <NewSessionDialog
+        open={newSessionOpen}
+        onOpenChange={setNewSessionOpen}
+      />
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {isError ? (
           <div

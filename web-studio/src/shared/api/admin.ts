@@ -20,6 +20,7 @@ import type { UserMemoryPolicy } from '#/shared/lib/user-memory-policy'
 export type AdminUserRole = 'admin' | 'root' | 'user'
 
 export type AdminConnection = {
+  browserSession?: boolean
   accountId: string
   apiKey: string
   baseUrl: string
@@ -45,6 +46,7 @@ export type AdminUser = {
 export type CreateAccountInput = {
   accountId: string
   adminUserId: string
+  password?: string
 }
 
 export type CreateUserInput = {
@@ -136,6 +138,7 @@ export function createAdminClient(connection: AdminConnection) {
     Accept: 'application/json',
   }
   setOptionalHeader(headers, 'X-API-Key', connection.apiKey)
+  if (connection.browserSession) headers['X-OpenViking-CSRF'] = '1'
 
   return createClient({
     axios: axios.create(),
@@ -482,6 +485,7 @@ export async function createAdminAccount(
       body: {
         account_id: input.accountId,
         admin_user_id: input.adminUserId,
+        ...(input.password === undefined ? {} : { password: input.password }),
       },
       client: createAdminClient(connection),
     }),

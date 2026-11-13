@@ -111,7 +111,10 @@ export function useCreateSession() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: (sessionId?: string) => createSession(sessionId),
+    mutationFn: (input?: string | { sessionId?: string; peerId?: string }) =>
+      typeof input === 'object'
+        ? createSession(input.sessionId, input.peerId)
+        : createSession(input),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SESSIONS_KEY })
     },

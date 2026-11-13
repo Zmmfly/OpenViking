@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsersRouteImport } from './routes/users'
 import { Route as PlaygroundRouteImport } from './routes/playground'
+import { Route as PeersRouteImport } from './routes/peers'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as MemoriesRouteImport } from './routes/memories'
 import { Route as LoginRouteImport } from './routes/login'
@@ -50,6 +51,7 @@ import { Route as CompileNewRouteImport } from './routes/compile/new'
 import { Route as AgentExperienceExperienceUriRouteImport } from './routes/agent-experience/$experienceUri'
 import { Route as AdminSettingsRouteImport } from './routes/admin/settings'
 import { Route as AdminConfigurationRouteImport } from './routes/admin/configuration'
+import { Route as AdminAccountsRouteImport } from './routes/admin/accounts'
 import { Route as AdminUsersRouteRouteImport } from './routes/admin/users/route'
 import { Route as AdminGatewayRouteRouteImport } from './routes/admin/gateway/route'
 import { Route as AdminVikingbotIndexRouteImport } from './routes/admin/vikingbot/index'
@@ -82,6 +84,11 @@ const UsersRoute = UsersRouteImport.update({
 const PlaygroundRoute = PlaygroundRouteImport.update({
   id: '/playground',
   path: '/playground',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PeersRoute = PeersRouteImport.update({
+  id: '/peers',
+  path: '/peers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OnboardingRoute = OnboardingRouteImport.update({
@@ -280,6 +287,11 @@ const AdminConfigurationRoute = AdminConfigurationRouteImport.update({
   path: '/configuration',
   getParentRoute: () => AdminRouteRoute,
 } as any)
+const AdminAccountsRoute = AdminAccountsRouteImport.update({
+  id: '/accounts',
+  path: '/accounts',
+  getParentRoute: () => AdminRouteRoute,
+} as any)
 const AdminUsersRouteRoute = AdminUsersRouteRouteImport.update({
   id: '/users',
   path: '/users',
@@ -428,10 +440,12 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
+  '/peers': typeof PeersRoute
   '/playground': typeof PlaygroundRoute
   '/users': typeof UsersRouteWithChildren
   '/admin/gateway': typeof AdminGatewayRouteRouteWithChildren
   '/admin/users': typeof AdminUsersRouteRouteWithChildren
+  '/admin/accounts': typeof AdminAccountsRoute
   '/admin/configuration': typeof AdminConfigurationRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
   '/agent-experience/$experienceUri': typeof AgentExperienceExperienceUriRoute
@@ -490,8 +504,10 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
+  '/peers': typeof PeersRoute
   '/playground': typeof PlaygroundRoute
   '/users': typeof UsersRouteWithChildren
+  '/admin/accounts': typeof AdminAccountsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/agent-experience/$experienceUri': typeof AgentExperienceExperienceUriRoute
   '/compile/new': typeof CompileNewRoute
@@ -554,10 +570,12 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/memories': typeof MemoriesRoute
   '/onboarding': typeof OnboardingRoute
+  '/peers': typeof PeersRoute
   '/playground': typeof PlaygroundRoute
   '/users': typeof UsersRouteWithChildren
   '/admin/gateway': typeof AdminGatewayRouteRouteWithChildren
   '/admin/users': typeof AdminUsersRouteRouteWithChildren
+  '/admin/accounts': typeof AdminAccountsRoute
   '/admin/configuration': typeof AdminConfigurationRouteWithChildren
   '/admin/settings': typeof AdminSettingsRoute
   '/agent-experience/$experienceUri': typeof AgentExperienceExperienceUriRoute
@@ -622,10 +640,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/memories'
     | '/onboarding'
+    | '/peers'
     | '/playground'
     | '/users'
     | '/admin/gateway'
     | '/admin/users'
+    | '/admin/accounts'
     | '/admin/configuration'
     | '/admin/settings'
     | '/agent-experience/$experienceUri'
@@ -684,8 +704,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/memories'
     | '/onboarding'
+    | '/peers'
     | '/playground'
     | '/users'
+    | '/admin/accounts'
     | '/admin/settings'
     | '/agent-experience/$experienceUri'
     | '/compile/new'
@@ -747,10 +769,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/memories'
     | '/onboarding'
+    | '/peers'
     | '/playground'
     | '/users'
     | '/admin/gateway'
     | '/admin/users'
+    | '/admin/accounts'
     | '/admin/configuration'
     | '/admin/settings'
     | '/agent-experience/$experienceUri'
@@ -814,6 +838,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MemoriesRoute: typeof MemoriesRoute
   OnboardingRoute: typeof OnboardingRoute
+  PeersRoute: typeof PeersRoute
   PlaygroundRoute: typeof PlaygroundRoute
   UsersRoute: typeof UsersRouteWithChildren
   CompileNewRoute: typeof CompileNewRoute
@@ -840,6 +865,13 @@ declare module '@tanstack/react-router' {
       path: '/playground'
       fullPath: '/playground'
       preLoaderRoute: typeof PlaygroundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/peers': {
+      id: '/peers'
+      path: '/peers'
+      fullPath: '/peers'
+      preLoaderRoute: typeof PeersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/onboarding': {
@@ -1115,6 +1147,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminConfigurationRouteImport
       parentRoute: typeof AdminRouteRoute
     }
+    '/admin/accounts': {
+      id: '/admin/accounts'
+      path: '/accounts'
+      fullPath: '/admin/accounts'
+      preLoaderRoute: typeof AdminAccountsRouteImport
+      parentRoute: typeof AdminRouteRoute
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -1338,6 +1377,7 @@ const AdminConfigurationRouteWithChildren =
 interface AdminRouteRouteChildren {
   AdminGatewayRouteRoute: typeof AdminGatewayRouteRouteWithChildren
   AdminUsersRouteRoute: typeof AdminUsersRouteRouteWithChildren
+  AdminAccountsRoute: typeof AdminAccountsRoute
   AdminConfigurationRoute: typeof AdminConfigurationRouteWithChildren
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1352,6 +1392,7 @@ interface AdminRouteRouteChildren {
 const AdminRouteRouteChildren: AdminRouteRouteChildren = {
   AdminGatewayRouteRoute: AdminGatewayRouteRouteWithChildren,
   AdminUsersRouteRoute: AdminUsersRouteRouteWithChildren,
+  AdminAccountsRoute: AdminAccountsRoute,
   AdminConfigurationRoute: AdminConfigurationRouteWithChildren,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminIndexRoute: AdminIndexRoute,
@@ -1449,6 +1490,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MemoriesRoute: MemoriesRoute,
   OnboardingRoute: OnboardingRoute,
+  PeersRoute: PeersRoute,
   PlaygroundRoute: PlaygroundRoute,
   UsersRoute: UsersRouteWithChildren,
   CompileNewRoute: CompileNewRoute,

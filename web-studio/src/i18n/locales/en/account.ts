@@ -1,4 +1,48 @@
 export default {
+  workspacesTitle: 'Accounts / workspaces',
+  workspacesDescription:
+    'Manage separate workspaces and their members. Memories and resources belong to each workspace.',
+  workspacesRootRequired: 'Only platform administrators can manage workspaces.',
+  workspaceId: 'Workspace ID',
+  createWorkspace: 'Create workspace',
+  createWorkspaceDescription:
+    'Create a separate data space and its first account administrator. Set a password for browser sign-in.',
+  initialAdministrator: 'Initial administrator username',
+  workspaceCreated: 'Workspace {{account}} created',
+  memberCount: 'Members',
+  manageMembers: 'Manage users',
+  searchWorkspaces: 'Search workspaces',
+  noWorkspaces: 'No matching workspaces.',
+  actions: 'Actions',
+  refresh: 'Refresh',
+  peersTitle: 'Peers',
+  peersDescription:
+    'Organize memories and reference material for people or collaborating agents within your user space.',
+  peersUnavailable:
+    'Peer management is available on self-hosted OpenViking servers.',
+  peerScopeHint:
+    'Each Peer has its own memory and resource directories. These belong to your user; your own memories and accessible shared resources remain available.',
+  createPeer: 'Create Peer',
+  createPeerDescription:
+    'Choose a stable ID for this person or agent. Reusing an ID continues the same Peer space.',
+  peerId: 'Peer ID',
+  peerIdHint:
+    'Use letters, numbers, dots, underscores, hyphens and at most one @, up to 255 characters. Path separators, . and .., and the reserved ID __self are not allowed.',
+  peerCreated: 'Peer space is ready',
+  searchPeers: 'Search Peers',
+  noPeers: 'No Peers yet. Create one to organize its memories and resources.',
+  peerMemories: 'View memories',
+  peerResources: 'View resources',
+  newPeerSession: 'New Peer session',
+  newSessionDescription:
+    'Choose whose memories this session should build. The selection stays with this session.',
+  sessionMemoryScope: 'Memory target',
+  selfMemory: 'My memories',
+  peerSessionHint:
+    'Messages will identify the selected Peer. Committing extracts Peer memories only; your own memories and accessible shared resources can still be read.',
+  selfSessionHint: 'Use your existing memory extraction policy.',
+  peerSessionLabel: 'Peer: {{peer}}',
+  createSession: 'Create session',
   usersDescription: 'Manage members, roles and sign-in access in this account.',
   userListDescription:
     'Add users, set passwords, change roles, or disable and remove access.',

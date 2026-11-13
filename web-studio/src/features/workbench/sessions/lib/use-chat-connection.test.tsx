@@ -67,6 +67,44 @@ it('does not persist a completed stream after its owner unmounts and the connect
   expect(writes).toEqual([])
 })
 
+it('uses the persisted Peer for model access and user message storage', async () => {
+  mocks.stream.mockResolvedValue(
+    (async function* () {
+      yield {
+        data: JSON.stringify({
+          event: 'response',
+          data: { content: 'remembered' },
+        }),
+      }
+    })(),
+  )
+  mocks.addMessage.mockResolvedValue({})
+  const view = renderHook(() =>
+    useChat({
+      identityScopeKey: 'ant',
+      sessionId: 'peer-session',
+      peerId: 'review-agent',
+    }),
+  )
+  await act(async () => {
+    await view.result.current.send('remember my preference')
+  })
+  expect(mocks.stream).toHaveBeenCalledWith(
+    { message: 'remember my preference', session_id: 'peer-session' },
+    expect.any(AbortSignal),
+    'review-agent',
+  )
+  expect(mocks.addMessage).toHaveBeenCalledWith(
+    'peer-session',
+    'user',
+    'remember my preference',
+    undefined,
+    'review-agent',
+  )
+  expect(view.result.current.messages[0].peer_id).toBe('review-agent')
+  view.unmount()
+})
+
 it('does not send the assistant message to a changed connection after the user write finishes', async () => {
   mocks.stream.mockResolvedValue(
     (async function* () {

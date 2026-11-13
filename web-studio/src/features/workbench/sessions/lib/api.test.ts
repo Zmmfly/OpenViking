@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { OvClientError, ovClient } from '#/shared/api/ov-client/index'
 
 import {
+  addMessage,
+  createSession,
   fetchBotHealth,
   fetchSessionFirstTitle,
   fetchSessionMessages,
@@ -19,11 +21,15 @@ const {
   getSessionIdArchiveByArchiveIdMock,
   getSessionIdContextMock,
   getContentReadMock,
+  postSessionsMock,
+  postMessagesMock,
 } = vi.hoisted(() => ({
   getSessionBySessionIdMock: vi.fn(),
   getSessionIdArchiveByArchiveIdMock: vi.fn(),
   getSessionIdContextMock: vi.fn(),
   getContentReadMock: vi.fn(),
+  postSessionsMock: vi.fn(),
+  postMessagesMock: vi.fn(),
 }))
 
 vi.mock('#/gen/ov-client/sdk.gen', () => ({
@@ -34,9 +40,9 @@ vi.mock('#/gen/ov-client/sdk.gen', () => ({
   getSessionIdContext: getSessionIdContextMock,
   getSessions: vi.fn(),
   postBotV1Chat: vi.fn(),
-  postSessions: vi.fn(),
+  postSessions: postSessionsMock,
   postSessionIdCommit: vi.fn(),
-  postSessionIdMessages: vi.fn(),
+  postSessionIdMessages: postMessagesMock,
 }))
 
 function response(result: unknown) {
@@ -55,6 +61,33 @@ function message(id: string, text: string) {
     role: 'user',
   }
 }
+
+it('sends the selected Peer in session creation and user messages without changing legacy bodies', async () => {
+  postSessionsMock.mockReturnValue(response({ session_id: 'peer-session' }))
+  postMessagesMock.mockReturnValue(response({ session_id: 'peer-session' }))
+  await createSession(undefined, 'review-agent')
+  expect(postSessionsMock).toHaveBeenLastCalledWith({
+    body: { peer_id: 'review-agent' },
+  })
+  await createSession()
+  expect(postSessionsMock).toHaveBeenLastCalledWith({ body: undefined })
+  await addMessage(
+    'peer-session',
+    'user',
+    'remember',
+    undefined,
+    'review-agent',
+  )
+  expect(postMessagesMock).toHaveBeenLastCalledWith({
+    path: { session_id: 'peer-session' },
+    body: {
+      role: 'user',
+      content: 'remember',
+      parts: undefined,
+      peer_id: 'review-agent',
+    },
+  })
+})
 
 describe('fetchSessionMessages', () => {
   beforeEach(() => {
@@ -483,6 +516,30 @@ describe('Bot fetch credentials', () => {
       })
     }
   })
+})
+
+it('keeps the selected Peer on stream and steering request headers', async () => {
+  ovClient.setOptions({ baseUrl: 'http://localhost:1933' })
+  const fetchMock = vi.fn().mockImplementation(async (url: string) =>
+    url.endsWith('/stream')
+      ? new Response('data: ready\n\n', {
+          headers: { 'Content-Type': 'text/event-stream' },
+        })
+      : new Response(JSON.stringify({ accepted: true })),
+  )
+  vi.stubGlobal('fetch', fetchMock)
+  await sendChatStream(
+    { message: 'hello', session_id: 'peer-session' },
+    undefined,
+    'review-agent',
+  )
+  await steerChatSession(
+    'peer-session',
+    { message: 'continue' },
+    'review-agent',
+  )
+  for (const [, options] of fetchMock.mock.calls)
+    expect(options.headers['X-OpenViking-Actor-Peer']).toBe('review-agent')
 })
 
 describe('interruptChatSession', () => {

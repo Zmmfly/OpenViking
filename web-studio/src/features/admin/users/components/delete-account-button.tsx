@@ -54,6 +54,12 @@ export function DeleteAccountButton({
       await switchManagementAccount(nextAccountId)
       queryClient.removeQueries({ queryKey: ['managed-users'] })
       await queryClient.invalidateQueries({ queryKey: ['account-switcher'] })
+      for (const key of [
+        'managed-accounts',
+        'browser-management-accounts',
+        'scope-accounts',
+      ])
+        await queryClient.invalidateQueries({ queryKey: [key] })
       setOpen(false)
       setConfirmation('')
       toast.success(
