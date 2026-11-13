@@ -39,6 +39,9 @@ class EmbeddingCredential(BaseModel):
     region: Optional[str] = Field(default=None, description="Region for VikingDB API")
     host: Optional[str] = Field(default=None, description="Host for VikingDB API")
     extra_headers: Optional[dict[str, str]] = Field(default=None, description="Extra HTTP headers")
+    multimodal_input_format: Optional[Literal["openai", "text_image"]] = Field(
+        default=None, description="Override the OpenAI-compatible multimodal wire format"
+    )
 
 
 class EmbeddingModelConfig(BaseModel):
@@ -50,6 +53,14 @@ class EmbeddingModelConfig(BaseModel):
     dimension: Optional[int] = Field(default=None, description="Embedding dimension")
     batch_size: int = Field(default=32, description="Batch size for embedding generation")
     input: str = Field(default="multimodal", description="Input type: 'text' or 'multimodal'")
+    multimodal_input_format: Literal["openai", "text_image"] = Field(
+        default="openai",
+        description=(
+            "Multimodal input wire format for OpenAI / Azure compatible endpoints: "
+            "'openai' sends typed content blocks; 'text_image' sends text/image objects. "
+            "Requires explicit input='multimodal'. Can be overridden per credential."
+        ),
+    )
     query_param: Optional[str] = Field(
         default=None,
         description=(
@@ -781,6 +792,7 @@ class EmbeddingConfig(BaseModel):
                     "provider": "openai",
                     "configured_provider": "openai",
                     "config": dict(runtime_config),
+                    "multimodal_input_format": cfg.multimodal_input_format,
                     **({"query_param": cfg.query_param} if cfg.query_param else {}),
                     **({"document_param": cfg.document_param} if cfg.document_param else {}),
                     **({"extra_headers": cfg.extra_headers} if cfg.extra_headers else {}),
@@ -808,6 +820,12 @@ class EmbeddingConfig(BaseModel):
                     "provider": "azure",
                     "configured_provider": "azure",
                     "config": dict(runtime_config),
+                    "multimodal_input_format": cfg.multimodal_input_format,
+                    **(
+                        {"input_type": "multimodal"}
+                        if "input" in cfg.model_fields_set and cfg.input == "multimodal"
+                        else {}
+                    ),
                     **({"query_param": cfg.query_param} if cfg.query_param else {}),
                     **({"document_param": cfg.document_param} if cfg.document_param else {}),
                     **({"extra_headers": cfg.extra_headers} if cfg.extra_headers else {}),
@@ -1103,6 +1121,9 @@ class EmbeddingConfig(BaseModel):
                 api_base=cred.api_base or config.api_base,
                 api_version=cred.api_version or config.api_version,
                 extra_headers=cred.extra_headers or config.extra_headers,
+                multimodal_input_format=(
+                    cred.multimodal_input_format or config.multimodal_input_format
+                ),
                 # Model-behavior fields are shared by all credentials of the
                 # same model and live only on the parent config.
                 encoding_format=config.encoding_format,

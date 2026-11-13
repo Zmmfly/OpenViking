@@ -27,6 +27,7 @@ class AccountEmbeddingCredential(BaseModel):
     region: Optional[str] = RuntimeField(default=None)
     host: Optional[str] = RuntimeField(default=None)
     extra_headers: Optional[Dict[str, str]] = RuntimeField(default=None)
+    multimodal_input_format: Optional[Literal["openai", "text_image"]] = RuntimeField(default=None)
 
 
 class AccountEmbeddingModelConfig(BaseModel):

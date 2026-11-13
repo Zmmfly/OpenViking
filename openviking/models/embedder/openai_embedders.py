@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0
 """OpenAI Embedder Implementation"""
 
+import math
 from typing import Any, Dict, List, Literal, Optional, cast
 
 import httpx
@@ -87,6 +88,7 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
         configured_provider: Optional[str] = None,
         encoding_format: Optional[Literal["float", "base64"]] = None,
         extra_body: Optional[Dict[str, Any]] = None,
+        multimodal_input_format: Literal["openai", "text_image"] = "openai",
     ):
         """Initialize OpenAI-Compatible Dense Embedder
 
@@ -123,6 +125,9 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
                        (e.g., OpenRouter provider routing:
                        {'provider': {'sort': 'latency'}}). Keys set explicitly via
                        query_param/document_param take precedence on conflict.
+            multimodal_input_format: Content-item wire format. ``openai`` keeps
+                typed content blocks; ``text_image`` sends text/image objects
+                for compatible gateways. Only applies in multimodal input mode.
 
         Raises:
             ValueError: If api_key is not provided and env vars are not set
@@ -142,6 +147,7 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
         self.query_param = query_param
         self.document_param = document_param
         self._supports_multimodal = input_type == "multimodal"
+        self.multimodal_input_format = multimodal_input_format
         self.encoding_format = encoding_format
         self.extra_body = extra_body
         self._provider = provider.lower()
@@ -322,7 +328,9 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
     def supports_multimodal(self) -> bool:
         return self._supports_multimodal
 
-    def _prepare_embedding_input(self, text: EmbeddingInput | List[str]) -> EmbeddingInput | List[str]:
+    def _prepare_embedding_input(
+        self, text: EmbeddingInput | List[str]
+    ) -> EmbeddingInput | List[str]:
         if isinstance(text, list) and all(isinstance(item, str) for item in text):
             if self.max_input_tokens is None:
                 return text
@@ -333,6 +341,19 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
     def _build_kwargs(
         self, text_input: EmbeddingInput | List[str], is_query: bool = False
     ) -> Dict[str, Any]:
+        if self.multimodal_input_format == "text_image" and self._is_multimodal_content(text_input):
+            parts = []
+            for part in text_input:
+                if part.get("type") == "text":
+                    parts.append({"text": part["text"]})
+                elif part.get("type") == "image_url":
+                    image = part["image_url"]
+                    parts.append({"image": image["url"] if isinstance(image, dict) else image})
+                else:
+                    raise ValueError(
+                        "The text_image embedding format supports only text and images"
+                    )
+            text_input = parts
         kwargs: Dict[str, Any] = {"input": text_input, "model": self.model_name}
         if self.dimension and self._should_send_dimensions():
             kwargs["dimensions"] = self.dimension
@@ -343,6 +364,33 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
         if extra_body:
             kwargs["extra_body"] = extra_body
         return kwargs
+
+    def _is_multimodal_content(self, text_input: EmbeddingInput | List[str]) -> bool:
+        return (
+            self.supports_multimodal
+            and isinstance(text_input, list)
+            and bool(text_input)
+            and all(isinstance(part, dict) for part in text_input)
+        )
+
+    def _response_vector(
+        self, response: Any, text_input: EmbeddingInput | List[str]
+    ) -> List[float]:
+        if not self._is_multimodal_content(text_input) or len(response.data) == 1:
+            return self._truncate_vector(response.data[0].embedding)
+        # Some gateways return one vector per content item instead of a fused
+        # vector. Pool every item so mixed queries and multiple images retain
+        # all their inputs. Text batches retain the existing first-item contract.
+        if len(response.data) != len(text_input):
+            raise ValueError("Provider returned an unexpected number of content embeddings")
+        vectors = [item.embedding for item in response.data]
+        if not vectors[0] or any(len(vector) != len(vectors[0]) for vector in vectors):
+            raise ValueError("Provider returned inconsistent embedding dimensions")
+        vector = [sum(values) / len(vectors) for values in zip(*vectors, strict=True)]
+        norm = math.sqrt(sum(value * value for value in vector))
+        if not norm:
+            raise ValueError("Provider returned a zero pooled embedding")
+        return self._truncate_vector([value / norm for value in vector])
 
     def _should_send_dimensions(self) -> bool:
         # Preserve existing behavior for official OpenAI embeddings: only custom
@@ -389,12 +437,7 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
                 **self._build_kwargs(embedding_input, is_query=is_query)
             )
             self._update_telemetry_token_usage(response)
-            vector = response.data[0].embedding
-
-            # Truncate vector if needed
-            vector = self._truncate_vector(vector)
-
-            return EmbedResult(dense_vector=vector)
+            return EmbedResult(dense_vector=self._response_vector(response, embedding_input))
 
         try:
             return self._run_once(
@@ -408,7 +451,9 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
             raise RuntimeError(f"Embedding failed: {str(e)}") from e
 
     @model_error_boundary
-    async def embed_async(self, text: EmbeddingInput | List[str], is_query: bool = False) -> EmbedResult:
+    async def embed_async(
+        self, text: EmbeddingInput | List[str], is_query: bool = False
+    ) -> EmbedResult:
         client = self._get_async_client()
         embedding_input = self._prepare_embedding_input(text)
 
@@ -417,7 +462,7 @@ class OpenAIDenseEmbedder(DenseEmbedderBase):
                 **self._build_kwargs(embedding_input, is_query=is_query)
             )
             self._update_telemetry_token_usage(response)
-            return EmbedResult(dense_vector=self._truncate_vector(response.data[0].embedding))
+            return EmbedResult(dense_vector=self._response_vector(response, embedding_input))
 
         try:
             return await self._run_once_async(
