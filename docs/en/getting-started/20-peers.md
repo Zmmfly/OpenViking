@@ -17,6 +17,8 @@ Review-agent's content lives under `viking://user/alice/peers/review-agent/`. A 
 
 ## Prerequisites
 
+In self-hosted Studio, open **Peers** in the workbench sidebar and choose **Create Peer**. The list links to its memories, resources and a new Peer session. The normal new-session dialog also lets you select a Peer, which is saved with the server-side session. Peer sessions default to extracting only that object's memories while retaining your memory-type and working-memory settings. Commit the session to inspect its memory changes. Studio uses the same Peer directories as the CLI/API examples below.
+
 Complete [Authentication](17-authentication.md) and use the `acme-alice` connection. This example first checks Peer source scoping, then demonstrates memory extraction. Source writes and extraction require working server models and incur model calls.
 
 Keep a stable ID for the same counterpart, such as `review-agent`. Use a single path segment without `/`. When repeating the walkthrough, choose a new session ID while keeping the Peer ID to retain continuity.

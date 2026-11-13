@@ -4,6 +4,14 @@ An API key identifies the caller and determines which operations they can perfor
 
 This walkthrough enables API key authentication, creates the `acme` account with `team-admin` as its first administrator, and registers Alice and Bob as ordinary users. The other team management pages reuse these identities.
 
+## Manage identities in Studio
+
+Self-hosted Studio supports username and password sign-in without entering an API key for daily browser use. On first deployment, use the administrator initialization link on the sign-in page.
+
+- An **Account** is a separate workspace; a **User** is a member within that workspace. Both fields identify the login, and different workspaces can have users with the same name.
+- Platform administrators can open **Accounts / workspaces** (`/studio/admin/accounts`) in management mode to create a workspace with its first administrator's password, or open its user management. Account administrators manage only their own workspace's members.
+- To keep memories for multiple people or agents within one user, open **Peers** (`/studio/peers`) in the workbench, create a Peer and choose **New Peer session**. The session saves its memory target and defaults to extracting only Peer memories on commit. Peers belong to the current user; the user's own memories and authorized shared resources remain available for reading. See [Peers](20-peers.md).
+
 ## Prerequisites
 
 Use a self-hosted service whose configuration you can edit and restart. Prepare the `ov` CLI, curl, and an existing server configuration. Keep the model and storage settings from the [quickstart](02-quickstart.md); the JSON below shows only fields to merge into that configuration.
