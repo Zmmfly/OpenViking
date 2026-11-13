@@ -373,6 +373,8 @@ class SessionMeta:
     retained_message_token_budget: int = 0
     min_raw_tail_steps: int = 1
     memory_policy: Optional[Dict[str, Any]] = None
+    # Optional default interaction object for user messages in this session.
+    peer_id: Optional[str] = None
     # Automatic-commit policy. None keeps auto-commit disabled; a dict enables
     # it with the stored bounds. Session config PATCH may update it.
     auto_commit_policy: Optional[Dict[str, Any]] = None
@@ -421,6 +423,8 @@ class SessionMeta:
             data["total_message_count"] = self.total_message_count
         if self.event_search_tags is not None:
             data["event_search_tags"] = list(self.event_search_tags)
+        if self.peer_id is not None:
+            data["peer_id"] = self.peer_id
         return data
 
     @classmethod
@@ -467,6 +471,7 @@ class SessionMeta:
             ),
             min_raw_tail_steps=max(0, int(data.get("min_raw_tail_steps", 1) or 0)),
             memory_policy=data.get("memory_policy"),
+            peer_id=normalize_peer_id(data.get("peer_id")),
             auto_commit_policy=data.get("auto_commit_policy"),
             last_message_at=data.get("last_message_at", ""),
             last_auto_commit_at=data.get("last_auto_commit_at", ""),
@@ -968,6 +973,10 @@ class Session:
     async def _apply_appended_messages_to_state(self, messages: List[Message]) -> None:
         """Update in-memory counters after an authoritative root reload."""
         for msg in messages:
+            # Use metadata reloaded under the append lock, including for fresh
+            # Session handles created by subsequent HTTP requests or workers.
+            if msg.role == "user" and msg.peer_id is None:
+                msg.peer_id = self._meta.peer_id
             self._messages.append(msg)
 
             if is_user_query(msg):

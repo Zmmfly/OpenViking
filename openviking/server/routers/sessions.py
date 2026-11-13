@@ -176,10 +176,16 @@ class CreateSessionRequest(BaseModel):
     """Request model for creating a session."""
 
     session_id: Optional[str] = None
+    peer_id: Optional[str] = Field(default=None, max_length=255)
     memory_policy: Optional[Dict[str, Any]] = None
     auto_commit_policy: Optional[AutoCommitPolicyRequest] = None
     memory_extraction_config: Optional[MemoryExtractionConfigRequest] = None
     telemetry: TelemetryRequest = False
+
+    @field_validator("peer_id")
+    @classmethod
+    def validate_peer_id(cls, value: Optional[str]) -> Optional[str]:
+        return normalize_peer_id(value)
 
 
 def _event_tags_from_extraction_config(
@@ -322,11 +328,13 @@ async def create_session(
             auto_commit_policy=auto_commit_policy_payload,
             update_auto_commit_policy=update_auto_commit_policy,
             event_tags=event_tags,
+            **({"peer_id": request.peer_id} if request.peer_id is not None else {}),
         )
         return {
             "session_id": session.session_id,
             "uri": session.uri,
             "user": session.user.to_dict(),
+            **({"peer_id": request.peer_id} if request.peer_id is not None else {}),
             "auto_commit_policy": service.sessions.effective_auto_commit_policy(session),
             "memory_extraction_config": service.sessions.effective_memory_extraction_config(
                 session

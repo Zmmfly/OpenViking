@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 from openviking.core.namespace import canonical_session_uri
+from openviking.core.peer_id import normalize_peer_id
 from openviking.privacy.sanitizer import PrivacySanitizer
 from openviking.privacy.service import UserPrivacyConfigService
 from openviking.server.config import ToolOutputExternalizationConfig
@@ -40,6 +41,7 @@ from openviking.utils.tags import normalize_search_tags
 from openviking.utils.time_utils import parse_iso_datetime
 from openviking_cli.exceptions import (
     AlreadyExistsError,
+    InvalidArgumentError,
     NotFoundError,
     NotInitializedError,
 )
@@ -276,6 +278,7 @@ class SessionService:
         auto_commit_policy: Optional[Dict[str, Any]] = None,
         update_auto_commit_policy: bool = False,
         event_tags: Optional[List[str]] = None,
+        peer_id: Optional[str] = None,
     ) -> Session:
         """Create a session and persist its root path.
 
@@ -289,6 +292,8 @@ class SessionService:
             event_tags: Optional default custom scalar tags for event memories
                 (``config.memory_extraction_config.events.tags``). Normalized to
                 canonical ``key=value`` form; ``None`` leaves no session default.
+            peer_id: Optional default Peer for user messages. Without an explicit
+                memory policy, inherit the user's type selection and extract only Peer memories.
 
         Raises:
             AlreadyExistsError: If a session with the given ID already exists
@@ -300,6 +305,15 @@ class SessionService:
                 if await existing.exists():
                     raise AlreadyExistsError(f"Session '{session_id}' already exists")
             session = self.session(ctx, session_id)
+            if peer_id is not None:
+                session.meta.peer_id = normalize_peer_id(peer_id)
+                if session.meta.peer_id == "__self":
+                    raise InvalidArgumentError("__self is reserved; omit peer_id for self memory")
+                if session.meta.peer_id and memory_policy is None:
+                    policy = MemoryPolicy.from_dict(await self._get_user_memory_policy(ctx))
+                    policy.self_enabled = False
+                    policy.peer_enabled = True
+                    memory_policy = policy.to_dict()
             if memory_policy is not None:
                 policy = MemoryPolicy.from_dict(memory_policy)
                 policy.validate_memory_types(

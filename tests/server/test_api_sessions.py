@@ -139,6 +139,52 @@ async def _call_add_message_route(
     )
 
 
+@pytest.mark.parametrize("batch", [False, True])
+async def test_create_peer_session_persists_target_and_tags_messages(
+    client: httpx.AsyncClient, service, batch
+):
+    service.sessions.set_default_user_memory_policy(
+        {"self": {"enabled": True}, "peer": {"enabled": False}, "memory_types": ["preferences"]}
+    )
+    response = await client.post(
+        "/api/v1/sessions", json={"session_id": "peer-target", "peer_id": "review-agent"}
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["result"]["peer_id"] == "review-agent"
+    detail = (await client.get("/api/v1/sessions/peer-target")).json()["result"]
+    assert detail["peer_id"] == "review-agent"
+    assert detail["memory_policy"]["memory_types"] == ["preferences"]
+    assert not detail["memory_policy"]["self"]["enabled"]
+    assert detail["memory_policy"]["peer"]["enabled"]
+    input_messages = [
+        {"role": "user", "content": "remember my preference"},
+        {"role": "assistant", "content": "understood"},
+        {"role": "user", "content": "another speaker", "peer_id": "research-agent"},
+    ]
+    if batch:
+        assert (
+            await client.post(
+                "/api/v1/sessions/peer-target/messages/batch", json={"messages": input_messages}
+            )
+        ).status_code == 200
+    else:
+        for message in input_messages:
+            assert (
+                await client.post("/api/v1/sessions/peer-target/messages", json=message)
+            ).status_code == 200
+    messages = (await client.get("/api/v1/sessions/peer-target/context")).json()["result"][
+        "messages"
+    ]
+    assert [message.get("peer_id") for message in messages] == [
+        "review-agent",
+        None,
+        "research-agent",
+    ]
+    assert (await client.get("/api/v1/sessions/peer-target")).json()["result"][
+        "peer_id"
+    ] == "review-agent"
+
+
 async def test_create_session(client: httpx.AsyncClient, service):
     headers = {"X-OpenViking-Account": "session-only", "X-OpenViking-User": "alice"}
     ctx = RequestContext(user=UserIdentifier("session-only", "alice"), role=Role.ROOT)
@@ -719,8 +765,7 @@ async def test_auto_created_session_uses_default_policy_when_server_default_enab
     session_resp = await client.get(f"/api/v1/sessions/{session_id}")
     assert session_resp.status_code == 200
     assert (
-        session_resp.json()["result"]["auto_commit_policy"]
-        == AutoCommitPolicy.default().to_dict()
+        session_resp.json()["result"]["auto_commit_policy"] == AutoCommitPolicy.default().to_dict()
     )
 
 
