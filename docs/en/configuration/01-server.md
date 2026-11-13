@@ -146,8 +146,32 @@ API-based `embedding`, `vlm`, `query_planner`, and `rerank` configurations reuse
 | `dimension` | integer, `> 0` | Vector dimension; must match model output and existing collections |
 | `input` | `"text"` / `"multimodal"` | Input type |
 | `encoding_format` | `"float"` / `"base64"` | OpenAI-compatible vector encoding |
+| `multimodal_input_format` | `"openai"` / `"text_image"` | Multimodal wire format for OpenAI / Azure compatible endpoints; defaults to `openai` and can be overridden per `credentials[]` entry |
 
 Changing the model or `dimension` can make existing vector collections incompatible and may require migration or reindexing.
+
+Multimodal endpoints use different request formats. The default `openai` preserves typed `text` and `image_url` content blocks. Gateways that require `{"text":"..."}` / `{"image":"..."}` objects, including SiliconFlow Qwen3-VL-Embedding, can use:
+
+```json
+{
+  "embedding": {
+    "dense": {
+      "provider": "openai",
+      "api_base": "https://api.siliconflow.cn/v1",
+      "api_key": "${SILICONFLOW_API_KEY}",
+      "model": "Qwen/Qwen3-VL-Embedding-8B",
+      "dimension": 4096,
+      "input": "multimodal",
+      "multimodal_input_format": "text_image",
+      "encoding_format": "float"
+    }
+  }
+}
+```
+
+Format selection is independent of the hostname and model. Explicit `input: "multimodal"` is required to send images. A single provider-fused vector is used directly; separate vectors for individual content items are mean-pooled and L2-normalized so mixed text/image or multiple-image inputs are retained. Pooling is not equivalent to native model fusion. Plain text and text batches keep their existing behavior. Failover endpoints can select different formats through `credentials[].multimodal_input_format`.
+
+In Studio, open Server configuration → Embedding and edit a connection to view or change its Multimodal input format. Configure each primary or fallback connection separately, apply the draft, save the configuration and restart the server.
 
 ### `rules`
 

@@ -146,8 +146,32 @@ API 型 `embedding`、`vlm`、`query_planner` 和 `rerank` 配置会复用部分
 | `dimension` | integer，`> 0` | 向量维度，必须与模型输出及已有集合一致 |
 | `input` | `"text"` / `"multimodal"` | 输入类型 |
 | `encoding_format` | `"float"` / `"base64"` | OpenAI 兼容接口的向量编码格式 |
+| `multimodal_input_format` | `"openai"` / `"text_image"` | OpenAI / Azure 兼容接口的多模态请求格式；默认 `openai`，可在每个 `credentials[]` 中单独指定 |
 
 更换模型或 `dimension` 可能与已有向量集合不兼容，需要迁移或重建索引。
+
+多模态接口的请求格式并不统一。默认 `openai` 保留 `{"type":"text","text":"..."}` 和 `{"type":"image_url","image_url":{"url":"..."}}` 内容块。要求 `{"text":"..."}` / `{"image":"..."}` 的兼容服务（如硅基流动 Qwen3-VL-Embedding）可配置：
+
+```json
+{
+  "embedding": {
+    "dense": {
+      "provider": "openai",
+      "api_base": "https://api.siliconflow.cn/v1",
+      "api_key": "${SILICONFLOW_API_KEY}",
+      "model": "Qwen/Qwen3-VL-Embedding-8B",
+      "dimension": 4096,
+      "input": "multimodal",
+      "multimodal_input_format": "text_image",
+      "encoding_format": "float"
+    }
+  }
+}
+```
+
+该选项按协议选择，不限制域名或模型；其他同类服务也可使用。必须显式设置 `input: "multimodal"` 才会发送图片。供应商返回一个融合向量时直接使用；逐项返回多个向量时，取均值并进行 L2 归一化，避免丢弃图文或多图输入。后者属于向量聚合，不等同于模型原生图文融合。纯文本和文本批次的请求格式保持原有行为。不同备用接口可通过 `credentials[].multimodal_input_format` 分别选择格式。
+
+在 Studio 的“服务端配置 → Embedding”中编辑相应连接，可通过“多模态输入格式”下拉框查看和修改该值。每个主备连接可单独设置；应用到草稿并保存配置后，重启服务生效。
 
 ### `rules`
 
