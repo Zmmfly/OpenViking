@@ -28,6 +28,8 @@ ENV PATH="/app/.venv/bin:/usr/local/cargo/bin:${PATH}"
 ARG OPENVIKING_VERSION=
 ARG TARGETPLATFORM
 ARG UV_LOCK_STRATEGY=auto
+ARG CARGO_BUILD_JOBS
+ARG CARGO_PROFILE_RELEASE_LTO
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
