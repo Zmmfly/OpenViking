@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import type { AdminUser } from '#/shared/api/admin'
@@ -85,6 +86,33 @@ beforeEach(() => {
   mocks.serverMode = 'api_key'
   mocks.users = []
 })
+
+it.each(['root', 'admin'])(
+  'shows a muted, readonly platform administrator role to %s while allowing account role management',
+  async (role) => {
+    mocks.connectionRole = role
+    mocks.users = [
+      { accountId: 'team', userId: 'owner', role: 'admin', serverAdmin: true },
+      { accountId: 'team', userId: 'teammate', role: 'admin' },
+    ]
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    render(
+      <QueryClientProvider client={client}>
+        <UserManagementPanel />
+      </QueryClientProvider>,
+    )
+    const owner = within((await screen.findByText('owner')).closest('tr')!)
+    expect(owner.queryByRole('combobox')).toBeNull()
+    const badge = owner.getByText('roles.admin')
+    expect(badge.getAttribute('aria-disabled')).toBe('true')
+    expect(badge.className).toContain('text-muted-foreground')
+    const teammate = within(screen.getByText('teammate').closest('tr')!)
+    expect(teammate.getByRole('combobox')).toBeTruthy()
+    client.clear()
+  },
+)
 
 it.each([
   ['Root-only', 'root', 'api_key', '', false],

@@ -256,6 +256,23 @@ async def test_account_admin_cannot_take_over_server_administrator(runtime):
     assert (await client.delete("/api/v1/admin/accounts/team/users/admin")).status_code == 403
 
 
+async def test_server_administrator_role_is_fixed_even_with_another_admin(runtime):
+    client = runtime.client
+    await _bootstrap(runtime)
+    await _add_user(runtime, "team-admin", role="admin")
+    url = "/api/v1/admin/accounts/team/users/admin/role"
+    for headers in ({}, {"X-API-Key": ROOT_KEY}):
+        response = await client.put(url, json={"role": "user"}, headers=headers)
+        assert response.status_code == 403
+        assert "Server administrator role cannot be changed" in response.text
+    assert (await client.put(url, json={"role": "admin"})).status_code == 200
+    # Ordinary account administrators can still be demoted by ROOT.
+    assert (
+        await client.put("/api/v1/admin/accounts/team/users/team-admin/role", json={"role": "user"})
+    ).status_code == 200
+    assert (await client.get("/api/v1/auth/session")).json()["result"]["role"] == "root"
+
+
 @pytest.mark.parametrize(
     "valid_nonce,missing_claim", [(True, None), (False, None), (True, "aud"), (True, "exp")]
 )

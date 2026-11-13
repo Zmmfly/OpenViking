@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from openviking.server.account_stores.mysql import MySQLAccountStore
 from openviking.server.account_stores.mysql_schema import Base
 from openviking.server.api_keys.key_mgr import generate_api_key
-from openviking_cli.exceptions import FailedPreconditionError
+from openviking_cli.exceptions import FailedPreconditionError, PermissionDeniedError
 
 
 class InlineRuntime:
@@ -103,3 +103,16 @@ async def test_relational_login_versions_revoke_sessions(store):
     assert (await store.get_login_info("team", "admin"))["session_version"] != login[
         "session_version"
     ]
+
+
+async def test_relational_server_administrator_role_is_fixed(store):
+    await store.create_account("team", "admin")
+    await store.set_login_password("team", "admin", "encoded-password", server_admin=True)
+    await store.create_user("team", "other-admin", "admin")
+    with pytest.raises(PermissionDeniedError, match="Server administrator role"):
+        await store.set_role("team", "admin", "user")
+    assert (await store.get_user("team", "admin"))["role"] == "admin"
+    assert (await store.get_login_info("team", "admin"))["is_server_admin"]
+    await store.set_role("team", "admin", "admin")
+    await store.set_role("team", "other-admin", "user")
+    assert (await store.get_user("team", "other-admin"))["role"] == "user"

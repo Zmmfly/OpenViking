@@ -783,6 +783,8 @@ class MySQLAccountStore(AccountStore):
             self._require_active(account)
             user = await self._lock_user(session, account, user_id)
             self._require_active(user)
+            if user.is_server_admin and role != Role.ADMIN:
+                raise PermissionDeniedError("Server administrator role cannot be changed")
             if user.role == Role.GLOBAL:
                 raise InvalidArgumentError(
                     "GLOBAL identities cannot change roles; delete and recreate instead."

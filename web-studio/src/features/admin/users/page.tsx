@@ -594,9 +594,7 @@ export function UserManagementPanel() {
                           <UserRoleCell
                             userId={user.userId}
                             role={user.role}
-                            editable={
-                              !user.serverAdmin || connectionRole === 'root'
-                            }
+                            editable={!user.serverAdmin}
                             pending={updateRole.isPending}
                             onChange={(role) =>
                               setPendingRoleChange({

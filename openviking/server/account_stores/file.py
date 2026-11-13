@@ -1525,6 +1525,8 @@ class FileStore(AccountStore):
     async def set_role(self, account_id: str, user_id: str, role: str) -> None:
         resolved = validate_account_user_role(role)
         async with self._edit_user(account_id, user_id) as (user, users):
+            if user.get("login", {}).get("is_server_admin") and resolved != Role.ADMIN:
+                raise PermissionDeniedError("Server administrator role cannot be changed")
             if user.get("role") == Role.GLOBAL:
                 raise InvalidArgumentError(
                     "GLOBAL identities cannot change roles; delete and recreate instead."

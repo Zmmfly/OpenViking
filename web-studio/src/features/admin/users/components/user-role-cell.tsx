@@ -32,7 +32,11 @@ export function UserRoleCell({
   const { t } = useTranslation('settings')
   if (!editable || !isAssignableRole(role))
     return (
-      <Badge variant={role === 'admin' ? 'secondary' : 'outline'}>
+      <Badge
+        variant={role === 'admin' ? 'secondary' : 'outline'}
+        className="text-muted-foreground"
+        aria-disabled="true"
+      >
         {t(`roles.${role}`, { defaultValue: role })}
       </Badge>
     )
