@@ -24,6 +24,10 @@ export type FieldSpec = {
   key: string
   type?: 'secret' | 'number' | 'json' | 'toggle'
   options?: string[]
+  optionLabels?: Record<string, string>
+  defaultValue?: string
+  hint?: string
+  disabled?: boolean
   required?: boolean
   min?: number
 }
@@ -82,6 +86,17 @@ export function bindingFields(
       required: provider === 'azure',
     })
   if (provider === 'azure') fields.push({ key: 'api_version' })
+  if (kind === 'embedding' && ['openai', 'azure'].includes(provider))
+    fields.push({
+      key: 'multimodal_input_format',
+      options: ['openai', 'text_image'],
+      optionLabels: {
+        openai: 'models.multimodalInputFormats.openai',
+        text_image: 'models.multimodalInputFormats.text_image',
+      },
+      defaultValue: 'openai',
+      hint: 'models.multimodalInputFormatHint',
+    })
   return fields
 }
 function JsonField({
@@ -158,19 +173,22 @@ export function ModelFields({
     <>
       {fields.map((field) => {
         const id = `${prefix}-${field.key}`
+        const fieldReadOnly = readOnly || field.disabled === true
         const current =
           field.key === 'provider' && typeof value.provider === 'string'
             ? provider
             : field.key === 'model'
               ? value.model || inheritedModel
-              : value[field.key]
+              : (value[field.key] ?? field.defaultValue)
         const change = (next: unknown) =>
           onChange({ ...value, [field.key]: next })
         const label = t(`models.fields.${field.key}`)
         const isProvider = field.key === 'provider'
         const options = field.options?.map((option) => ({
           value: option,
-          label: option,
+          label: field.optionLabels?.[option]
+            ? t(field.optionLabels[option])
+            : option,
         }))
         if (isProvider && options)
           options.push({
@@ -191,7 +209,7 @@ export function ModelFields({
                       ? current
                       : null
                 }
-                disabled={readOnly}
+                disabled={fieldReadOnly}
                 required={field.required}
                 items={options}
                 onValueChange={(next) => {
@@ -201,7 +219,11 @@ export function ModelFields({
                   } else change(next)
                 }}
               >
-                <SelectTrigger id={id} className="h-10 w-full">
+                <SelectTrigger
+                  id={id}
+                  className="h-10 w-full"
+                  aria-describedby={field.hint ? `${id}-hint` : undefined}
+                >
                   <SelectValue placeholder={t('models.selectProvider')} />
                 </SelectTrigger>
                 <SelectContent align="start">
@@ -216,14 +238,14 @@ export function ModelFields({
               <JsonField
                 value={current}
                 onChange={change}
-                readOnly={readOnly}
+                readOnly={fieldReadOnly}
                 id={id}
               />
             ) : field.type === 'toggle' ? (
               <Switch
                 id={id}
                 checked={current === true}
-                disabled={readOnly}
+                disabled={fieldReadOnly}
                 onCheckedChange={change}
               />
             ) : (
@@ -237,7 +259,7 @@ export function ModelFields({
                       ? true
                       : field.required
                   }
-                  readOnly={readOnly}
+                  readOnly={fieldReadOnly}
                   min={field.min}
                   step={field.type === 'number' ? 'any' : undefined}
                   type={
@@ -286,6 +308,11 @@ export function ModelFields({
                   </Button>
                 )}
               </div>
+            )}
+            {field.hint && (
+              <p id={`${id}-hint`} className="text-xs text-muted-foreground">
+                {t(field.hint)}
+              </p>
             )}
           </Field>
         )

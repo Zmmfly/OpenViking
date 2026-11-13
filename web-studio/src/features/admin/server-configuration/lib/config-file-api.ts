@@ -76,6 +76,7 @@ export const embeddingCredentialFields = [
   'region',
   'host',
   'extra_headers',
+  'multimodal_input_format',
 ]
 
 export function isConfigFileObject(content: string): boolean {
@@ -122,7 +123,7 @@ export function embeddingPatch(config: ModelConfig): ModelConfig {
         ),
       ),
       ...Object.fromEntries(
-        ['failback_timeout_seconds', 'failback_request_count']
+        ['input', 'failback_timeout_seconds', 'failback_request_count']
           .filter((key) => section[key] !== undefined)
           .map((key) => [key, section[key]]),
       ),

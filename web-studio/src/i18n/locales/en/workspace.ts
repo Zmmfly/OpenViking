@@ -993,12 +993,19 @@ const workspace = {
       environmentObject:
         'This configuration contains environment references or escaped reference symbols. The form is read-only. Web Studio does not support environment variable configuration. If your configuration uses environment variables, maintain ov.conf directly on the server.',
       embeddingContract:
-        'Model identity, dimensions and input type are fixed at account creation.',
+        'Model identity and dimensions are fixed at account creation. Change the input type from Edit model.',
+      inputTypes: {
+        text: 'Text',
+        multimodal: 'Multimodal',
+      },
+      embeddingInputHint:
+        'All connections in this vector group share the input type. Choose Multimodal only when the model supports image input. Save and restart the server to apply changes.',
       fields: {
         provider: 'Provider',
         text_source: 'Embedding text source',
         dimension: 'Dimensions',
         input: 'Input type',
+        multimodal_input_format: 'Multimodal input format',
         query_param: 'Query task',
         document_param: 'Document task',
         version: 'Model version',
@@ -1087,6 +1094,12 @@ const workspace = {
       model: 'Default model ID',
       provider: 'Provider',
       selectProvider: 'Select a provider',
+      multimodalInputFormats: {
+        openai: 'OpenAI content blocks (openai)',
+        text_image: 'Text/image objects (text_image)',
+      },
+      multimodalInputFormatHint:
+        'For multimodal input: choose OpenAI for type/image_url content blocks, or text/image objects for endpoints that accept {text: ...} and {image: ...}. Set the format separately for each connection.',
       customProvider: 'Custom (OpenAI compatible)',
       apiKey: 'API key',
       apiBase: 'API URL',

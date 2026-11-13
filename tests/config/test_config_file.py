@@ -98,6 +98,85 @@ def test_embedding_credentials_display_parent_fallbacks(config_file):
     assert binding["api_key"] == "dummy-review-key"
 
 
+@pytest.mark.parametrize("provider", ["openai", "azure", "jina"])
+@pytest.mark.parametrize("failover", [False, True])
+def test_embedding_form_displays_effective_implicit_input(config_file, provider, failover):
+    path, raw = config_file
+    dense = raw["embedding"]["dense"]
+    dense.update(provider=provider, api_base="https://embedding.example/v1")
+    if failover:
+        dense["credentials"] = [{"id": "primary"}, {"id": "backup", "provider": provider}]
+    path.write_text(json.dumps(raw))
+    before = path.read_bytes()
+    view = read_config_file()["models"]["embedding"]["config"]["dense"]
+    assert view["input"] == ("text" if provider in ("openai", "azure") else "multimodal")
+    assert path.read_bytes() == before
+    assert "input" not in json.loads(before)["embedding"]["dense"]
+
+
+@pytest.mark.parametrize("initial_input", ["text", "multimodal"])
+def test_embedding_input_form_roundtrip_preserves_connections_and_identity(
+    config_file, initial_input
+):
+    path, raw = config_file
+    dense = raw["embedding"]["dense"]
+    dense.update(
+        input=initial_input,
+        encoding_format="float",
+        credentials=[
+            {"id": "primary", "provider": "openai", "multimodal_input_format": "text_image"},
+            {
+                "id": "backup",
+                "provider": "azure",
+                "api_key": "backup-key",
+                "api_base": "https://azure.example/v1",
+            },
+        ],
+    )
+    path.write_text(json.dumps(raw))
+    loaded = read_config_file()
+    before = loaded["models"]["embedding"]["config"]["dense"]
+    next_input = "text" if initial_input == "multimodal" else "multimodal"
+    _save_form({"embedding": {"dense": {"input": next_input}}}, loaded["revision"])
+    stored = json.loads(path.read_text())
+    after = read_config_file()["models"]["embedding"]["config"]["dense"]
+    assert after["input"] == next_input
+    assert {key: value for key, value in after.items() if key != "input"} == {
+        key: value for key, value in before.items() if key != "input"
+    }
+    assert stored["embedding"]["dense"]["credentials"] == dense["credentials"]
+    assert stored["vlm"] == raw["vlm"] and stored["storage"] == raw["storage"]
+
+
+def test_multimodal_format_form_roundtrip_preserves_models_and_other_connections(config_file):
+    path, raw = config_file
+    dense = raw["embedding"]["dense"]
+    dense.update(
+        input="multimodal",
+        encoding_format="float",
+        multimodal_input_format="text_image",
+        credentials=[
+            {"id": "primary", "provider": "openai"},
+            {"id": "backup", "provider": "openai", "multimodal_input_format": "text_image"},
+        ],
+    )
+    path.write_text(json.dumps(raw))
+    loaded = read_config_file()
+    config = loaded["models"]["embedding"]["config"]
+    assert config["dense"]["credentials"][0]["multimodal_input_format"] == "text_image"
+    config["dense"]["credentials"][0]["multimodal_input_format"] = "openai"
+    _save_form({"embedding": config}, loaded["revision"])
+    stored = json.loads(path.read_text())
+    current = read_config_file()["models"]["embedding"]["config"]["dense"]
+    assert current["credentials"][0]["multimodal_input_format"] == "openai"
+    assert current["credentials"][1]["multimodal_input_format"] == "text_image"
+    assert current["credentials"][0]["api_key"] == "dummy-review-key"
+    assert current["model"] == dense["model"] and current["dimension"] == dense["dimension"]
+    assert current["input"] == "multimodal" and current["encoding_format"] == "float"
+    assert current["extra_body"] == {"routing": "keep"}
+    assert stored["vlm"] == raw["vlm"] and stored["storage"] == raw["storage"]
+
+
 @pytest.mark.parametrize("kind", ["vlm", "embedding"])
 def test_cleared_legacy_binding_fields_do_not_return(config_file, kind):
     path, raw = config_file

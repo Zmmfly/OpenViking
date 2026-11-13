@@ -138,6 +138,13 @@ def _model_view(content: str, config: OpenVikingConfig) -> dict:
                 for index, binding in enumerate(bindings)
             ]
             if kind == "embedding":
+                # OpenAI-compatible embedders require explicit multimodal opt-in;
+                # the schema default alone does not enable image requests.
+                if "input" not in original_section and any(
+                    binding.get("provider") in ("openai", "azure")
+                    for binding in section["credentials"]
+                ):
+                    section["input"] = "text"
                 for index, binding in enumerate(section["credentials"]):
                     if not binding.get("id"):
                         binding["id"] = f"credential-{index}"

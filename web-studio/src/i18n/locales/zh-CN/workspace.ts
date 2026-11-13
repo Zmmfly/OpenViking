@@ -950,12 +950,19 @@ const workspace = {
       environmentObject:
         '配置含环境变量引用或转义的引用符号，表单只读。Web Studio 不提供环境变量配置支持；依赖环境变量时，请直接在服务器上维护 ov.conf。',
       embeddingContract:
-        '模型身份、向量维度与输入类型为创建时配置，不能在此修改。',
+        '模型身份与向量维度为创建时配置，不能在此修改。输入类型可在“编辑模型”中调整。',
+      inputTypes: {
+        text: '文本',
+        multimodal: '多模态',
+      },
+      embeddingInputHint:
+        '同一向量组的所有连接共用输入类型。模型支持图片输入时才应选择多模态；保存并重启服务后生效。',
       fields: {
         provider: '服务提供商',
         text_source: '嵌入文本来源',
         dimension: '向量维度',
         input: '输入类型',
+        multimodal_input_format: '多模态输入格式',
         query_param: '查询任务参数',
         document_param: '文档任务参数',
         version: '模型版本',
@@ -1037,6 +1044,12 @@ const workspace = {
       model: '默认模型 ID',
       provider: '服务提供商',
       selectProvider: '选择服务提供商',
+      multimodalInputFormats: {
+        openai: 'OpenAI 内容块（openai）',
+        text_image: '文本/图片对象（text_image）',
+      },
+      multimodalInputFormatHint:
+        '仅在多模态输入时生效：接口接受 type/image_url 内容块时选择 OpenAI；接受 {text: ...}、{image: ...} 对象时选择文本/图片对象。每个连接可分别设置。',
       customProvider: '自定义（OpenAI 兼容）',
       apiKey: 'API Key',
       apiBase: 'API 地址',

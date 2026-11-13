@@ -27,6 +27,7 @@ it('sends only editable embedding fields and retains credential extensions suppo
             model: 'deployment',
             api_version: 'v1',
             extra_headers: { keep: 'yes' },
+            multimodal_input_format: 'text_image',
             dimension: 2048,
           },
         ],
@@ -35,6 +36,7 @@ it('sends only editable embedding fields and retains credential extensions suppo
   ).toEqual({
     max_retries: 4,
     dense: {
+      input: 'text',
       failback_request_count: 7,
       credentials: [
         {
@@ -43,6 +45,7 @@ it('sends only editable embedding fields and retains credential extensions suppo
           model: 'deployment',
           api_version: 'v1',
           extra_headers: { keep: 'yes' },
+          multimodal_input_format: 'text_image',
         },
       ],
     },

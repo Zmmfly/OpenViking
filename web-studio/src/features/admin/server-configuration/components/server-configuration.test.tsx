@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { ServerConfigurationEditor } from '#/features/admin/server-configuration/components/server-configuration'
 import type { ModelConfig } from '#/features/admin/server-configuration/lib/config-file-api'
+import { object } from '#/features/admin/server-configuration/lib/config-file-api'
 import en from '#/i18n/locales/en/workspace'
 import zh from '#/i18n/locales/zh-CN/workspace'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -183,10 +184,33 @@ function mount(
   payload: typeof data & {
     overrides?: { cluster: string[]; account: string[] }
   } = data,
+  sourceContent?: string,
 ) {
-  state.get.mockResolvedValue({ ...structuredClone(payload), content })
+  const payloadContent = JSON.stringify(
+    {
+      ...file,
+      vlm: payload.models.vlm.config,
+      embedding: payload.models.embedding.config,
+    },
+    null,
+    2,
+  )
+  state.get.mockResolvedValue({
+    ...structuredClone(payload),
+    content: sourceContent ?? payloadContent,
+  })
   state.preview.mockImplementation(async (text: string, changes = {}) => {
-    const raw = { ...JSON.parse(text), ...changes }
+    function merge(base: ModelConfig, patch: ModelConfig): ModelConfig {
+      return Object.fromEntries(
+        Object.entries({ ...base, ...patch }).map(([key, value]) => [
+          key,
+          value && typeof value === 'object' && !Array.isArray(value)
+            ? merge(object(base[key]), object(value))
+            : value,
+        ]),
+      )
+    }
+    const raw = merge(JSON.parse(text), changes)
     return {
       content: Object.keys(changes).length
         ? JSON.stringify(raw, null, 2)
@@ -235,6 +259,202 @@ function section(name: string) {
 it('includes localized contract labels in model settings', () => {
   expect(zh.settings.models.fields.dimension).toBe('向量维度')
   expect(en.settings.models.fields.dimension).toBe('Dimensions')
+  expect(zh.settings.models.fields.multimodal_input_format).toBe(
+    '多模态输入格式',
+  )
+  expect(en.settings.models.fields.multimodal_input_format).toBe(
+    'Multimodal input format',
+  )
+  expect(zh.settings.models.inputTypes).toEqual({
+    text: '文本',
+    multimodal: '多模态',
+  })
+  expect(en.settings.models.inputTypes).toEqual({
+    text: 'Text',
+    multimodal: 'Multimodal',
+  })
+})
+it.each(['text', 'multimodal'])(
+  'switches shared embedding input from %s without changing model identity or per-connection settings',
+  async (initialInput) => {
+    const user = userEvent.setup()
+    const payload = structuredClone(data)
+    const dense = payload.models.embedding.config.dense
+    dense.input = initialInput
+    Object.assign(dense.credentials[0], {
+      multimodal_input_format: 'text_image',
+    })
+    dense.credentials.push({
+      ...dense.credentials[0],
+      id: 'backup',
+      provider: 'azure',
+      api_key: 'backup-key',
+    })
+    mount(payload)
+    await screen.findByText('model-a')
+    fireEvent.click(
+      section('embeddingType').getAllByRole('button', {
+        name: 'models.view',
+      })[0],
+    )
+    let dialog = within(screen.getByRole('dialog'))
+    expect(
+      dialog
+        .getByRole('combobox', { name: 'models.fields.input' })
+        .hasAttribute('disabled'),
+    ).toBe(true)
+    fireEvent.click(dialog.getByRole('button', { name: 'models.edit' }))
+    dialog = within(screen.getByRole('dialog'))
+    const format = dialog.getByRole('combobox', {
+      name: 'models.fields.multimodal_input_format',
+    })
+    expect(format.hasAttribute('disabled')).toBe(initialInput === 'text')
+    const nextInput = initialInput === 'text' ? 'multimodal' : 'text'
+    await user.click(
+      dialog.getByRole('combobox', { name: 'models.fields.input' }),
+    )
+    await user.click(
+      await screen.findByRole('option', {
+        name: `models.inputTypes.${nextInput}`,
+      }),
+    )
+    expect(format.hasAttribute('disabled')).toBe(nextInput === 'text')
+    state.testModel.mockResolvedValue({ ok: true, ms: 12 })
+    fireEvent.click(
+      dialog.getByRole('button', { name: 'models.connectionTest.action' }),
+    )
+    await screen.findByText('models.connectionTest.success')
+    expect(state.testModel.mock.calls[0][0].fallback.input).toBe(nextInput)
+    await apply()
+    const updated = state.preview.mock.lastCall![1].embedding
+    expect(updated.dense.input).toBe(nextInput)
+    expect(updated.dense.model).toBe(dense.model)
+    expect(updated.dense.dimension).toBe(dense.dimension)
+    expect(updated.dense.credentials).toEqual(dense.credentials)
+    expect(updated.input).toBeUndefined()
+    expect(
+      updated.dense.credentials.every(
+        (value: ModelConfig) => !('input' in value),
+      ),
+    ).toBe(true)
+    // Reopening the backup displays the same shared input selection.
+    fireEvent.click(
+      section('embeddingType').getAllByRole('button', {
+        name: 'models.edit',
+      })[1],
+    )
+    expect(
+      screen.getByRole('combobox', { name: 'models.fields.input' }).textContent,
+    ).toContain(`models.inputTypes.${nextInput}`)
+    fireEvent.click(screen.getByRole('button', { name: 'models.dismiss' }))
+    fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1))
+    const saved = JSON.parse(state.save.mock.calls[0][0])
+    expect(saved.embedding.dense.input).toBe(nextInput)
+    expect(saved.embedding.dense.credentials).toEqual(dense.credentials)
+    expect(saved.vlm).toEqual(language)
+    expect(saved.server).toEqual(file.server)
+  },
+)
+it.each(['openai', 'azure'])(
+  'displays and saves the multimodal wire format independently for each %s connection',
+  async (provider) => {
+    const user = userEvent.setup()
+    const payload = structuredClone(data)
+    const dense = payload.models.embedding.config.dense
+    dense.input = 'multimodal'
+    Object.assign(dense.credentials[0], {
+      provider,
+      multimodal_input_format: 'text_image',
+    })
+    dense.credentials.push({
+      ...dense.credentials[0],
+      id: 'backup',
+    })
+    mount(payload)
+    await screen.findByText('model-a')
+    fireEvent.click(
+      section('embeddingType').getAllByRole('button', {
+        name: 'models.view',
+      })[0],
+    )
+    let dialog = within(screen.getByRole('dialog'))
+    let format = dialog.getByRole('combobox', {
+      name: 'models.fields.multimodal_input_format',
+    })
+    expect(format.textContent).toContain(
+      'models.multimodalInputFormats.text_image',
+    )
+    expect(
+      format.hasAttribute('disabled') ||
+        format.getAttribute('aria-disabled') === 'true',
+    ).toBe(true)
+    fireEvent.click(dialog.getByRole('button', { name: 'models.edit' }))
+    dialog = within(screen.getByRole('dialog'))
+    format = dialog.getByRole('combobox', {
+      name: 'models.fields.multimodal_input_format',
+    })
+    await user.click(format)
+    await user.click(
+      await screen.findByRole('option', {
+        name: 'models.multimodalInputFormats.openai',
+      }),
+    )
+    await waitFor(() =>
+      expect(format.textContent).toContain(
+        'models.multimodalInputFormats.openai',
+      ),
+    )
+    await apply()
+    const updated = state.preview.mock.lastCall![1].embedding.dense
+    expect(updated.credentials[0].multimodal_input_format).toBe('openai')
+    expect(updated.credentials[1].multimodal_input_format).toBe('text_image')
+    expect(updated.model).toBe(dense.model)
+    expect(updated.dimension).toBe(dense.dimension)
+    expect(updated.input).toBeUndefined()
+    fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
+    await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1))
+    const saved = JSON.parse(state.save.mock.calls[0][0])
+    expect(saved.embedding.dense.credentials[0].multimodal_input_format).toBe(
+      'openai',
+    )
+    expect(saved.embedding.dense.credentials[1].multimodal_input_format).toBe(
+      'text_image',
+    )
+    expect(saved.embedding.dense.input).toBe('multimodal')
+    expect(saved.vlm).toEqual(language)
+    expect(saved.server).toEqual(file.server)
+  },
+)
+it('preserves implicit input behavior when only editing a connection in a mixed provider group', async () => {
+  const payload = structuredClone(data)
+  const dense = payload.models.embedding.config.dense
+  dense.credentials.push({
+    ...dense.credentials[0],
+    id: 'backup',
+    provider: 'jina',
+  })
+  const implicit = structuredClone({
+    ...file,
+    embedding: payload.models.embedding.config,
+  })
+  delete (implicit.embedding.dense as { input?: string }).input
+  mount(payload, JSON.stringify(implicit))
+  await screen.findByText('model-a')
+  fireEvent.click(
+    section('embeddingType').getAllByRole('button', { name: 'models.edit' })[0],
+  )
+  fireEvent.change(screen.getByLabelText('models.fields.api_key'), {
+    target: { value: 'rotated-key' },
+  })
+  await apply()
+  expect(state.preview.mock.lastCall![1].embedding.dense.input).toBeUndefined()
+  fireEvent.click(screen.getByRole('button', { name: 'models.saveAll' }))
+  await waitFor(() => expect(state.save).toHaveBeenCalledTimes(1))
+  const saved = JSON.parse(state.save.mock.calls[0][0])
+  expect(saved.embedding.dense.input).toBeUndefined()
+  expect(saved.embedding.dense.credentials[0].api_key).toBe('rotated-key')
+  expect(saved.embedding.dense.credentials[1]).toEqual(dense.credentials[1])
 })
 it.each([false, true])(
   'keeps the original revision across background refresh (applied: %s)',

@@ -389,6 +389,7 @@ type Editor = {
   readonly: boolean
   settings: boolean
   thinking?: boolean
+  input?: string
 }
 const titles: Record<EditableModelKind, string> = {
   vlm: 'models.vlmType',
@@ -523,11 +524,33 @@ export function ServerConfigurationEditor() {
   const pending =
     mutation.isPending || preview.isPending || restartMutation.isPending
   const invalidJson = !isConfigFileObject(document?.content ?? '{}')
+  const editorKind = editor?.kind
+  const editorMode = editor?.mode
+  const editorInput = editor?.input
+  const editorFallback = React.useMemo(() => {
+    if (!editorKind) return {}
+    const config = document?.models[editorKind].config ?? {}
+    const fallback = editorMode ? object(config[editorMode]) : config
+    return editorKind === 'embedding'
+      ? { ...fallback, input: editorInput }
+      : fallback
+  }, [document, editorKind, editorMode, editorInput])
   function current(kind: EditableModelKind): ModelConfig {
     return document?.models[kind].config ?? {}
   }
   function change(kind: EditableModelKind, value: ModelConfig) {
     if (pending || !document) return
+    if (kind === 'embedding') {
+      value = { ...value }
+      for (const mode of embeddingModes) {
+        if (!value[mode]) continue
+        const section = { ...object(value[mode]) }
+        // An unchanged projected default must not become an explicit input mode.
+        if (section.input === object(current(kind)[mode]).input)
+          delete section.input
+        value[mode] = section
+      }
+    }
     setBaseline((previous) => previous ?? query.data ?? null)
     mutation.reset()
     setSaved(false)
@@ -543,15 +566,15 @@ export function ServerConfigurationEditor() {
     values: ModelConfig[],
     shared: ModelConfig = {},
   ) {
-    const config = { ...current(kind), ...shared }
+    const config = current(kind)
     change(
       kind,
       mode
         ? {
             ...config,
-            [mode]: { ...object(config[mode]), credentials: values },
+            [mode]: { ...object(config[mode]), ...shared, credentials: values },
           }
-        : { ...config, credentials: values },
+        : { ...config, ...shared, credentials: values },
     )
   }
   function open(
@@ -581,6 +604,10 @@ export function ServerConfigurationEditor() {
       value: structuredClone(value),
       thinking:
         kind === 'vlm' && !settings ? config.thinking === true : undefined,
+      input:
+        kind === 'embedding' && mode && !settings
+          ? String(object(config[mode]).input || 'text')
+          : undefined,
     })
   }
   function dismissEditor() {
@@ -606,9 +633,11 @@ export function ServerConfigurationEditor() {
       else values[index] = next
       const config = current(kind)
       const shared =
-        kind === 'vlm' && editor.thinking !== (config.thinking === true)
-          ? { thinking: editor.thinking }
-          : {}
+        kind === 'embedding'
+          ? { input: editor.input }
+          : editor.thinking !== (config.thinking === true)
+            ? { thinking: editor.thinking }
+            : {}
       if (!mode && !config.model)
         change(kind, {
           ...config,
@@ -677,13 +706,15 @@ export function ServerConfigurationEditor() {
           { key: 'thinking', type: 'toggle' },
         ] as FieldSpec[])
     : editor
-      ? bindingFields(editor.kind, provider).map((field) =>
-          field.key === 'model' &&
-          editor.kind === 'vlm' &&
-          !current(editor.kind).model
+      ? bindingFields(editor.kind, provider).map((field) => {
+          if (field.key === 'multimodal_input_format')
+            return { ...field, disabled: editor.input !== 'multimodal' }
+          return field.key === 'model' &&
+            editor.kind === 'vlm' &&
+            !current(editor.kind).model
             ? { ...field, required: true }
-            : field,
-        )
+            : field
+        })
       : []
   return (
     <TooltipProvider>
@@ -1121,6 +1152,28 @@ export function ServerConfigurationEditor() {
                     {t('models.validateFailed')} {preview.error.message}
                   </p>
                 )}
+                {editor.kind === 'embedding' && !editor.settings && (
+                  <ModelFields
+                    prefix="shared-embedding"
+                    fields={[
+                      {
+                        key: 'input',
+                        options: ['text', 'multimodal'],
+                        optionLabels: {
+                          text: 'models.inputTypes.text',
+                          multimodal: 'models.inputTypes.multimodal',
+                        },
+                        hint: 'models.embeddingInputHint',
+                      },
+                    ]}
+                    value={{ input: editor.input }}
+                    readOnly={editor.readonly || pending}
+                    onChange={(value) => {
+                      if (!pending)
+                        setEditor({ ...editor, input: String(value.input) })
+                    }}
+                  />
+                )}
                 <ModelFields
                   key={`${editor.kind}-${editor.mode}-${editor.index}-${editor.settings}`}
                   fields={fields}
@@ -1150,6 +1203,8 @@ export function ServerConfigurationEditor() {
                       ]) {
                         value[key] = null
                       }
+                      if (editor.kind === 'embedding')
+                        value.multimodal_input_format = null
                     }
                     setEditor({ ...editor, value })
                   }}
@@ -1179,11 +1234,7 @@ export function ServerConfigurationEditor() {
                     mode={editor.mode}
                     kind={editor.kind}
                     config={editor.value}
-                    fallback={
-                      editor.mode
-                        ? object(current(editor.kind)[editor.mode])
-                        : current(editor.kind)
-                    }
+                    fallback={editorFallback}
                     thinking={editor.thinking}
                     disabled={pending}
                   />
